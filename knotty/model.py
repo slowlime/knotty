@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from typing import List
 from sqlalchemy import Column, ForeignKey, Integer, Table, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -9,19 +8,13 @@ class Base(DeclarativeBase):
     pass
 
 
-class HashAlgorithm(Enum):
-    argon2b = 1
-
-
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(unique=True)
     email: Mapped[str]
-    pwhash: Mapped[bytes]
-    hash_alg: Mapped[HashAlgorithm] = mapped_column(name="hash_alg")
-    salt: Mapped[bytes]
+    pwhash: Mapped[str]
     registered: Mapped[datetime]
 
     namespace_members: Mapped[List["NamespaceUser"]] = relationship(

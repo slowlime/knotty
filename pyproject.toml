@@ -9,6 +9,9 @@ readme = "README.md"
 python = "^3.10"
 sqlalchemy = "^2.0.9"
 fastapi = "^0.95.0"
+passlib = {extras = ["argon2"], version = "^1.7.4"}
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+toml = "^0.10.2"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.2.0"
