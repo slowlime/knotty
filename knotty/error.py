@@ -36,3 +36,7 @@ def email_registered() -> HTTPException:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Email is already registered",
     )
+
+
+def not_found() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND)
