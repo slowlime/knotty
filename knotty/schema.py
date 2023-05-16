@@ -66,3 +66,46 @@ class PackageBrief(PackageBasic):
     owners: list[str]
     updated_date: datetime
     downloads: int
+
+
+class Package(PackageBrief):
+    created_date: datetime
+    created_by: str
+    updated_by: str
+    versions: list["PackageVersion"]
+    tags: list["PackageTag"]
+
+
+class PackageVersion(BaseModel):
+    version: str
+    downloads: int
+    created_date: datetime
+    created_by: str
+    description: str
+    repository: str | None
+    tarball: str | None
+    checksums: list["PackageChecksum"]
+    dependencies: list["PackageDependency"]
+
+
+class PackageChecksum(BaseModel):
+    algorithm: str
+    value: str
+
+
+class PackageDependency(BaseModel):
+    package: str
+    spec: str
+
+
+class PackageTag(BaseModel):
+    name: str
+    version: str
+
+
+class Permission(BaseModel):
+    code: str
+    description: str
+
+    class Config:
+        orm_mode = True

@@ -82,3 +82,21 @@ def get_namespace_role(
     )
 
     return session.scalars(query).one_or_none()
+
+
+def get_packages(session: Session) -> list[model.Package]:
+    query = select(model.Package)
+
+    return list(session.scalars(query).all())
+
+
+def get_package(session: Session, name: str) -> model.Package | None:
+    query = select(model.Package).where(model.Package.name == name)
+
+    return session.scalars(query).one_or_none()
+
+
+def get_permissions(session: Session) -> list[model.Permission]:
+    query = select(model.Permission)
+
+    return list(session.scalars(query).all())

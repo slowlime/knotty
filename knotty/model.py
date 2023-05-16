@@ -1,7 +1,21 @@
 from datetime import datetime
 from typing import List
-from sqlalchemy import Column, ForeignKey, Integer, Table, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Integer,
+    Table,
+    UniqueConstraint,
+    func,
+    select,
+)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    column_property,
+    mapped_column,
+    relationship,
+)
 
 
 class Base(DeclarativeBase):
@@ -19,6 +33,10 @@ class User(Base):
 
     namespace_members: Mapped[List["NamespaceUser"]] = relationship(
         back_populates="user"
+    )
+    packages: Mapped[List["Package"]] = relationship(
+        secondary=lambda: package_owner_table,
+        back_populates="owners",
     )
 
 
@@ -79,28 +97,23 @@ class NamespaceRole(Base):
     namespace: Mapped[Namespace] = relationship(back_populates="roles")
     created_by: Mapped[User] = relationship(foreign_keys=created_by_user_id)
     updated_by: Mapped[User] = relationship(foreign_keys=updated_by_user_id)
-    permissions: Mapped[List["NamespaceRolePermission"]] = relationship(
-        back_populates="role",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
+    permissions: Mapped[List["Permission"]] = relationship(
+        secondary=lambda: namespace_role_permission_table,
     )
 
     __table_args__ = (UniqueConstraint("namespace_id", "name"),)
 
 
-class NamespaceRolePermission(Base):
-    __tablename__ = "namespace_role_permissions"
-
-    role_id: Mapped[int] = mapped_column(
-        ForeignKey(NamespaceRole.id, ondelete="CASCADE", onupdate="CASCADE"),
+namespace_role_permission_table = Table(
+    "namespace_role_permissions",
+    Base.metadata,
+    Column(
+        "role_id",
+        ForeignKey(NamespaceRole.id, ondelete="CASCADE", onupdated="CASCADE"),
         primary_key=True,
-    )
-    permission_id: Mapped[int] = mapped_column(
-        ForeignKey("permissions.id"), primary_key=True
-    )
-
-    role: Mapped[NamespaceRole] = relationship(back_populates="permissions")
-    permission: Mapped["Permission"] = relationship()
+    ),
+    Column("permission_id", ForeignKey("permissions.id"), primary_key=True),
+)
 
 
 class Permission(Base):
@@ -116,11 +129,22 @@ package_label_table = Table(
     Base.metadata,
     Column(
         "package_id",
+        ForeignKey("packages.id", ondelete="CASCADE", onupdate="CASCADE"),
+        primary_key=True,
+    ),
+    Column("label_id", ForeignKey("labels.id"), primary_key=True),
+)
+
+package_owner_table = Table(
+    "package_owners",
+    Base.metadata,
+    Column(
+        "package_id",
         Integer,
         ForeignKey("packages.id", ondelete="CASCADE", onupdate="CASCADE"),
         primary_key=True,
     ),
-    Column("label_id", Integer, ForeignKey("labels.id"), primary_key=True),
+    Column("owner_id", ForeignKey(User.id), primary_key=True),
 )
 
 
@@ -147,6 +171,10 @@ class Package(Base):
         passive_deletes=True,
         secondary=package_label_table,
     )
+    owners: Mapped[List[User]] = relationship(
+        secondary=package_owner_table,
+        back_populates="packages",
+    )
     versions: Mapped[List["PackageVersion"]] = relationship(
         back_populates="package",
         cascade="all, delete-orphan",
@@ -160,6 +188,9 @@ class Package(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    # defined below
+    downloads: Mapped[int]
 
 
 class PackageVersion(Base):
@@ -192,6 +223,13 @@ class PackageVersion(Base):
     tagged_as: Mapped[List["PackageTag"]] = relationship(back_populates="version")
 
     __table_args__ = (UniqueConstraint("package_id", "version"),)
+
+
+Package.downloads = column_property(
+    select(func.sum(PackageVersion.downloads))
+    .where(PackageVersion.package_id == Package.id)
+    .scalar_subquery()
+)
 
 
 class PackageVersionChecksum(Base):
