@@ -1,6 +1,15 @@
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel
+
+from knotty import model
+
+
+class UserRegistered(Enum):
+    not_registered = 0
+    username_taken = 1
+    email_registered = 2
 
 
 class UserInfo(BaseModel):
@@ -8,6 +17,10 @@ class UserInfo(BaseModel):
     email: str
     registered: datetime
     namespaces: list[str]
+
+
+class FullUserInfo(UserInfo):
+    role: model.UserRole
 
 
 class AuthToken(BaseModel):

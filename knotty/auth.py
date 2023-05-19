@@ -1,17 +1,16 @@
 from datetime import datetime, timedelta
 from typing import Annotated
-from fastapi import Depends, HTTPException, status
 
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from . import model, config
+from . import model, config, storage
 from .db import SessionDep
 from .error import unauthorized
-from .storage import get_user
 
 JWT_ALGORITHM = "HS256"
 
@@ -40,7 +39,7 @@ def hash_password(password: str) -> str:
 
 
 def auth_user(session: Session, username: str, password: str) -> model.User | None:
-    user = get_user(session, username)
+    user = storage.get_user_model(session, username)
 
     if user is None:
         return None
@@ -71,7 +70,7 @@ def get_current_user(
     except JWTError:
         raise unauthorized()
 
-    user = get_user(session, username)
+    user = storage.get_user_model(session, username)
 
     if user is None:
         raise unauthorized()

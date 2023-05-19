@@ -4,24 +4,34 @@ from typing import Annotated
 from fastapi import Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from .. import app, error, schema, config, storage
+from .. import acl, app, error, schema, config, storage
 from ..auth import AuthDep, JwtTokenData, auth_user, create_token, hash_password
 from ..db import SessionDep
 
 
 @app.get("/user/{username}")
 def get_user(
-    session: SessionDep, username: str, current_user: AuthDep
+    session: SessionDep,
+    username: str,
+    is_admin: Annotated[bool, Depends(acl.is_admin)],
+    user_view: Annotated[bool, Depends(acl.can_view_user)],
 ) -> schema.UserInfo:
-    if username != current_user.username:
-        raise error.no_permission()
+    user = storage.get_user(session, username)
+
+    if not user:
+        if is_admin:
+            raise error.not_found()
+        else:
+            raise error.no_permission()
+
+    acl.require(user_view)
 
     namespaces = storage.get_user_namespaces(session, username)
 
     return schema.UserInfo(
-        username=current_user.username,
-        email=current_user.email,
-        registered=current_user.registered,
+        username=user.username,
+        email=user.email,
+        registered=user.registered,
         namespaces=namespaces,
     )
 
@@ -44,11 +54,15 @@ def login(
 
 @app.post("/user", status_code=status.HTTP_201_CREATED)
 def register(session: SessionDep, body: schema.UserRegister) -> None:
-    if storage.get_user(session, body.username) is not None:
-        raise error.username_taken()
+    match storage.get_user_registered(session, body.username, body.email):
+        case schema.UserRegistered.username_taken:
+            raise error.username_taken()
 
-    if storage.get_user_by_email(session, body.email) is not None:
-        raise error.email_registered()
+        case schema.UserRegistered.email_registered:
+            raise error.email_registered()
+
+        case schema.UserRegistered.not_registered:
+            pass
 
     pwhash = hash_password(body.password)
     registered = datetime.utcnow()

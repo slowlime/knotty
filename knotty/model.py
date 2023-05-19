@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import List
 from sqlalchemy import (
     Column,
@@ -22,6 +23,12 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserRole(Enum):
+    regular = "regular"
+    admin = "admin"
+    banned = "banned"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -30,6 +37,7 @@ class User(Base):
     email: Mapped[str]
     pwhash: Mapped[str]
     registered: Mapped[datetime]
+    role: Mapped[UserRole]
 
     namespace_members: Mapped[List["NamespaceUser"]] = relationship(
         back_populates="user"
@@ -76,7 +84,7 @@ class NamespaceUser(Base):
         back_populates="namespace_members", foreign_keys=user_id
     )
     namespace: Mapped[Namespace] = relationship(back_populates="users")
-    role: Mapped["NamespaceRole"] = relationship()
+    role: Mapped["NamespaceRole"] = relationship(back_populates="users")
     added_by: Mapped[User] = relationship(foreign_keys=added_by_user_id)
     updated_by: Mapped[User] = relationship(foreign_keys=updated_by_user_id)
 
@@ -100,6 +108,9 @@ class NamespaceRole(Base):
     permissions: Mapped[List["Permission"]] = relationship(
         secondary=lambda: namespace_role_permission_table,
     )
+    users: Mapped[List[NamespaceUser]] = relationship(
+        back_populates="role"
+    )
 
     __table_args__ = (UniqueConstraint("namespace_id", "name"),)
 
@@ -116,11 +127,17 @@ namespace_role_permission_table = Table(
 )
 
 
+class PermissionCode(Enum):
+    namespace_owner = "namespace-owner"
+    namespace_admin = "namespace-admin"
+    namespace_edit = "namespace-edit"
+
+
 class Permission(Base):
     __tablename__ = "permissions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(unique=True)
+    code: Mapped[PermissionCode] = mapped_column(unique=True)
     description: Mapped[str]
 
 
