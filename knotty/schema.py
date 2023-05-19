@@ -41,10 +41,21 @@ class UserCreate(BaseModel):
     registered: datetime
 
 
-class Namespace(BaseModel):
+class NamespaceBase(BaseModel):
     name: str
     description: str
     homepage: str | None
+
+
+class NamespaceCreate(NamespaceBase):
+    pass
+
+
+class NamespaceEdit(NamespaceBase):
+    pass
+
+
+class Namespace(NamespaceBase):
     created_date: datetime
     users: list["NamespaceUser"]
     roles: list["NamespaceRole"]

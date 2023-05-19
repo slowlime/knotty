@@ -19,11 +19,17 @@ class Config(BaseModel):
     connect_args: dict[str, Any] = {}
     token_expiry: timedelta = timedelta(hours=2)
 
+    default_names: "DefaultNamesConfig"
+
     @staticmethod
     def load_from_toml(path: Path) -> "Config":
         parsed = toml.load(path)
 
         return Config(**parsed)
+
+
+class DefaultNamesConfig(BaseModel):
+    namespace_owner_role = "owner"
 
 
 def load_config() -> Config:

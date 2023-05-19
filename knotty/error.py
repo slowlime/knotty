@@ -40,3 +40,10 @@ def email_registered() -> HTTPException:
 
 def not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+
+def namespace_already_exists() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Namespace already exists",
+    )

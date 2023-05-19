@@ -9,6 +9,8 @@ from sqlalchemy.orm import (
     undefer,
 )
 
+from knotty import config
+
 from . import model, schema
 
 
@@ -252,6 +254,52 @@ def get_namespace_role(
         updated_by=role_model.updated_by.username,
         permissions=[str(permission.code) for permission in role_model.permissions],
     )
+
+
+def create_namespace(session: Session, data: schema.NamespaceCreate, owner: model.User):
+    namespace = model.Namespace(
+        name=data.name,
+        description=data.description,
+        homepage=data.homepage,
+    )
+
+    namespace_owner_permission = session.scalars(
+        select(model.Permission)
+        .filter_by(code=model.PermissionCode.namespace_owner)
+    ).one()
+    owner_role = model.NamespaceRole(
+        name=config.default_names.namespace_owner_role,
+        created_by=owner,
+        updated_by=owner,
+        namespace=namespace,
+    )
+    owner_role.permissions.append(namespace_owner_permission)
+
+    user = model.NamespaceUser(
+        user=owner,
+        namespace=namespace,
+        role=owner_role,
+        added_by=owner,
+        updated_by=owner,
+    )
+
+    session.add_all([namespace, user])
+
+
+def edit_namespace(session: Session, name: str, data: schema.NamespaceEdit):
+    namespace = get_namespace_model(session, name)
+    assert namespace is not None
+
+    namespace.namespace = data.name
+    namespace.description = data.description
+    namespace.homepage = data.homepage
+
+
+def delete_namespace(session: Session, name: str):
+    namespace = get_namespace_model(session, name)
+    assert namespace is not None
+
+    session.delete(namespace)
 
 
 def to_package_brief(package: model.Package) -> schema.PackageBrief:

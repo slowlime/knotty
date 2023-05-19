@@ -1,4 +1,4 @@
-from .. import app, error, model, schema, storage
+from .. import app, error, schema, storage
 from ..db import SessionDep
 
 

@@ -55,7 +55,7 @@ class Namespace(Base):
     namespace: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str]
     homepage: Mapped[str | None]
-    created_date: Mapped[datetime]
+    created_date: Mapped[datetime] = mapped_column(default=func.now())
 
     users: Mapped[List["NamespaceUser"]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan", passive_deletes=True
@@ -75,9 +75,11 @@ class NamespaceUser(Base):
         primary_key=True,
     )
     role_id: Mapped[int] = mapped_column(ForeignKey("namespace_roles.id"))
-    added_date: Mapped[datetime]
+    added_date: Mapped[datetime] = mapped_column(default=func.now())
     added_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
-    updated_date: Mapped[datetime]
+    updated_date: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now()
+    )
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
 
     user: Mapped[User] = relationship(
@@ -97,9 +99,10 @@ class NamespaceRole(Base):
         ForeignKey(Namespace.id, ondelete="CASCADE", onupdate="CASCADE")
     )
     name: Mapped[str]
-    created_date: Mapped[datetime]
+    created_date: Mapped[datetime] = mapped_column(default=func.now())
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
-    updated_date: Mapped[datetime]
+    updated_date: Mapped[datetime] = mapped_column(default=func.now(),
+                                                   onupdate=func.now())
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
 
     namespace: Mapped[Namespace] = relationship(back_populates="roles")
@@ -174,9 +177,10 @@ class Package(Base):
         ForeignKey(Namespace.id, ondelete="SET NULL", onupdate="SET NULL")
     )
     summary: Mapped[str]
-    created_date: Mapped[datetime]
+    created_date: Mapped[datetime] = mapped_column(default=func.now())
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
-    updated_date: Mapped[datetime]
+    updated_date: Mapped[datetime] = mapped_column(default=func.now(),
+                                                   onupdate=func.now())
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
 
     namespace: Mapped[Namespace | None] = relationship(back_populates="packages")
@@ -219,7 +223,7 @@ class PackageVersion(Base):
     )
     version: Mapped[str]
     downloads: Mapped[int]
-    created_date: Mapped[datetime]
+    created_date: Mapped[datetime] = mapped_column(default=func.now())
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
     description: Mapped[str]
     repository: Mapped[str | None]
