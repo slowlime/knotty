@@ -41,15 +41,50 @@ def can_edit_user(
     return is_admin
 
 
-def get_namespace_permissions(
+def get_namespace_user_permissions(
     session: Session, auth: AuthDep, namespace: str
 ) -> list[model.PermissionCode]:
-    return storage.get_namespace_permissions(session, namespace, auth.username)
+    return storage.get_namespace_user_permissions(session, namespace, auth.username)
 
 
 NamespacePermissions = Annotated[
-    list[model.PermissionCode], Depends(get_namespace_permissions)
+    list[model.PermissionCode], Depends(get_namespace_user_permissions)
 ]
+
+
+def has_namespace_permission(
+    user_permissions: set[model.PermissionCode],
+    permission: model.PermissionCode,
+) -> bool:
+    Code = model.PermissionCode
+
+    match permission:
+        case Code.namespace_owner:
+            return Code.namespace_owner in user_permissions
+
+        case Code.namespace_admin:
+            return (
+                has_namespace_permission(user_permissions, Code.namespace_owner)
+                or Code.namespace_admin in user_permissions
+            )
+
+        case _:
+            return (
+                has_namespace_permission(user_permissions, Code.namespace_admin)
+                or permission in user_permissions
+            )
+
+
+def has_namespace_permissions(
+    user_permissions: list[model.PermissionCode],
+    needed_permissions: list[model.PermissionCode],
+) -> bool:
+    user_perms = set(user_permissions)
+
+    return all(
+        has_namespace_permission(user_perms, permission)
+        for permission in needed_permissions
+    )
 
 
 def can_add_namespace(

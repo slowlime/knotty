@@ -38,12 +38,31 @@ def email_registered() -> HTTPException:
     )
 
 
-def not_found() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+def not_found(what: str | None = None) -> HTTPException:
+    detail = f"{what} not found" if what is not None else None
+
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=detail,
+    )
 
 
-def namespace_already_exists() -> HTTPException:
+def already_exists(what: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail="Namespace already exists",
+        detail=f"{what} already exists",
+    )
+
+
+def no_owner_remains() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Operation would leave namespace without owner",
+    )
+
+
+def role_not_empty() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Cannot remove namespace role with members",
     )

@@ -1,3 +1,4 @@
+from typing_extensions import assert_never
 from sqlalchemy import select
 from sqlalchemy.orm import (
     Session,
@@ -15,9 +16,13 @@ from . import model, schema
 
 
 def get_user_model(session: Session, username: str) -> model.User | None:
-    query = select(model.User).where(model.User.username == username)
+    return session.scalar(select(model.User).filter_by(username=username))
 
-    return session.scalar(query)
+
+def get_user_exists(session: Session, username: str) -> bool:
+    return session.scalars(
+        select(select(model.User).filter_by(username=username).exists())
+    ).one()
 
 
 def get_user(session: Session, username: str) -> schema.FullUserInfo | None:
@@ -31,6 +36,7 @@ def get_user(session: Session, username: str) -> schema.FullUserInfo | None:
         email=user.email,
         registered=user.registered,
         namespaces=get_user_namespaces(session, username),
+        id=user.id,
         role=user.role,
     )
 
@@ -38,13 +44,17 @@ def get_user(session: Session, username: str) -> schema.FullUserInfo | None:
 def get_user_registered(
     session: Session, username: str, email: str
 ) -> schema.UserRegistered:
-    user = session.scalar(
-        select(model.User.username, model.User.email).where(
-            (model.User.username == username) | (model.User.email == email)
-        )
-    )
+    username_eq = model.User.username == username
+    email_eq = model.User.email == email
 
-    match user:
+    user = session.execute(
+        select(username_eq, email_eq).where(username_eq | email_eq)
+    ).one_or_none()
+
+    if user is None:
+        return schema.UserRegistered.not_registered
+
+    match user.tuple():
         case (True, _):
             return schema.UserRegistered.username_taken
 
@@ -96,12 +106,81 @@ def get_namespace(session: Session, name: str) -> schema.Namespace | None:
     )
 
 
+def get_namespace_id(session: Session, name: str) -> int | None:
+    return session.scalar(
+        select(model.Namespace.id).where(model.Namespace.namespace == name)
+    )
+
+
 def get_namespace_exists(session: Session, name: str) -> bool:
-    return session.execute(
-        select(
-            select(model.Namespace).where(model.Namespace.namespace == name).exists()
-        )
-    ).scalar_one()
+    return get_namespace_id(session, name) is not None
+
+
+def create_namespace(session: Session, data: schema.NamespaceCreate, owner: model.User):
+    namespace = model.Namespace(
+        name=data.name,
+        description=data.description,
+        homepage=data.homepage,
+    )
+
+    namespace_owner_permission = session.scalars(
+        select(model.Permission).filter_by(code=model.PermissionCode.namespace_owner)
+    ).one()
+    owner_role = model.NamespaceRole(
+        name=config.default_names.namespace_owner_role,
+        created_by=owner,
+        updated_by=owner,
+        namespace=namespace,
+    )
+    owner_role.permissions.append(namespace_owner_permission)
+
+    user = model.NamespaceUser(
+        user=owner,
+        namespace=namespace,
+        role=owner_role,
+        added_by=owner,
+        updated_by=owner,
+    )
+
+    session.add_all([namespace, user])
+
+
+def edit_namespace(session: Session, name: str, data: schema.NamespaceEdit):
+    namespace = get_namespace_model(session, name)
+    assert namespace is not None
+
+    namespace.namespace = data.name
+    namespace.description = data.description
+    namespace.homepage = data.homepage
+
+
+def delete_namespace(session: Session, name: str):
+    namespace = get_namespace_model(session, name)
+    assert namespace is not None
+
+    session.delete(namespace)
+
+
+def get_namespace_owners(session: Session, namespace_id: int) -> list[str]:
+    return list(
+        session.scalars(
+            select(model.User.username)
+            .join_from(model.Namespace, model.Namespace.users)
+            .where(model.Namespace.id == namespace_id)
+            .where(
+                model.NamespaceUser.role_id.in_(
+                    select(model.NamespaceRole.id)
+                    .where(model.NamespaceRole.namespace_id == namespace_id)
+                    .join(model.NamespaceRole.permissions)
+                    .where(
+                        model.Permission.code == model.PermissionCode.namespace_owner
+                    )
+                    .distinct()
+                )
+            )
+            .join(model.NamespaceUser.user)
+        ).all()
+    )
 
 
 def get_namespace_users(session: Session, name: str) -> list[schema.NamespaceUser]:
@@ -164,7 +243,7 @@ def get_namespace_roles(session: Session, name: str) -> list[schema.NamespaceRol
             created_by=role.created_by.username,
             updated_date=role.updated_date,
             updated_by=role.updated_by.username,
-            permissions=[str(permission.code) for permission in role.permissions],
+            permissions=[permission.code for permission in role.permissions],
         )
         for role in roles
     ]
@@ -215,6 +294,100 @@ def get_namespace_user(
     )
 
 
+def get_namespace_user_model(
+    session: Session, namespace_id: int, username: str
+) -> model.NamespaceUser | None:
+    return session.scalar(
+        select(model.NamespaceUser)
+        .filter_by(namespace_id=namespace_id)
+        .join(model.NamespaceUser.user)
+        .where(model.User.username == username)
+    )
+
+
+def get_namespace_user_exists(
+    session: Session, namespace_id: int, username: str
+) -> bool:
+    return session.scalars(
+        select(
+            select(model.NamespaceUser)
+            .filter_by(namespace_id=namespace_id)
+            .join(model.NamespaceUser.user)
+            .where(model.User.username == username)
+            .exists()
+        )
+    ).one()
+
+
+def get_namespace_user_permissions(
+    session: Session, namespace: str, username: str
+) -> list[model.PermissionCode]:
+    query = (
+        select(model.Permission.code)
+        .join_from(model.User, model.User.namespace_members)
+        .where(model.User.username == username)
+        .join(model.NamespaceUser.namespace)
+        .where(model.Namespace.namespace == namespace)
+        .join(model.NamespaceUser.role)
+        .join(model.NamespaceRole.permissions)
+    )
+
+    return list(session.scalars(query).all())
+
+
+def create_namespace_user(
+    session: Session,
+    namespace_id: int,
+    data: schema.NamespaceUserCreate,
+    added_by: model.User,
+):
+    user = get_user_model(session, data.username)
+    assert user is not None
+
+    role = get_namespace_role_model(session, namespace_id, data.role)
+    assert role is not None
+
+    ns_user = model.NamespaceUser(
+        user=user,
+        namespace_id=namespace_id,
+        role=role,
+        added_by=added_by,
+        updated_by=added_by,
+    )
+    session.add(ns_user)
+
+
+def edit_namespace_user(
+    session: Session,
+    namespace_id: int,
+    username: str,
+    data: schema.NamespaceUserEdit,
+    updated_by: model.User,
+):
+    user = get_user_model(session, username)
+    assert user is not None
+
+    role = get_namespace_role_model(session, namespace_id, data.role)
+    assert role is not None
+
+    ns_user = get_namespace_user_model(session, namespace_id, username)
+    assert ns_user is not None
+
+    ns_user.role = role
+    ns_user.updated_by = updated_by
+
+
+def delete_namespace_user(
+    session: Session,
+    namespace_id: int,
+    username: str,
+):
+    ns_user = get_namespace_user_model(session, namespace_id, username)
+    assert ns_user is not None
+
+    session.delete(ns_user)
+
+
 def get_namespace_role(
     session: Session,
     namespace: str,
@@ -252,54 +425,140 @@ def get_namespace_role(
         created_by=role_model.created_by.username,
         updated_date=role_model.updated_date,
         updated_by=role_model.updated_by.username,
-        permissions=[str(permission.code) for permission in role_model.permissions],
+        permissions=[permission.code for permission in role_model.permissions],
     )
 
 
-def create_namespace(session: Session, data: schema.NamespaceCreate, owner: model.User):
-    namespace = model.Namespace(
-        name=data.name,
-        description=data.description,
-        homepage=data.homepage,
+def get_namespace_role_model(
+    session: Session, namespace_id: int, role: str
+) -> model.NamespaceRole | None:
+    return session.scalar(
+        select(model.NamespaceRole).filter_by(namespace_id=namespace_id, name=role)
     )
 
-    namespace_owner_permission = session.scalars(
-        select(model.Permission)
-        .filter_by(code=model.PermissionCode.namespace_owner)
+
+def get_namespace_role_exists(session: Session, name: str | int, role: str) -> bool:
+    query = select(model.NamespaceRole).join_from(
+        model.Namespace, model.Namespace.roles
+    )
+
+    match name:
+        case str(name):
+            query = query.where(model.Namespace.namespace == name)
+
+        case int(namespace_id):
+            query = query.where(model.Namespace.id == namespace_id)
+
+    return session.scalars(
+        select(query.where(model.NamespaceRole.name == role).exists())
     ).one()
-    owner_role = model.NamespaceRole(
-        name=config.default_names.namespace_owner_role,
-        created_by=owner,
-        updated_by=owner,
-        namespace=namespace,
+
+
+def create_namespace_role(
+    session: Session,
+    namespace_id: int,
+    data: schema.NamespaceRoleCreate,
+    added_by: model.User,
+):
+    permissions = session.scalars(
+        select(model.Permission).where(model.Permission.code.in_(data.permissions))
+    ).all()
+
+    role = model.NamespaceRole(
+        namespace_id=namespace_id,
+        name=data.name,
+        created_by=added_by,
+        updated_by=added_by,
+        permissions=permissions,
     )
-    owner_role.permissions.append(namespace_owner_permission)
 
-    user = model.NamespaceUser(
-        user=owner,
-        namespace=namespace,
-        role=owner_role,
-        added_by=owner,
-        updated_by=owner,
+    session.add(role)
+
+
+def edit_namespace_role(
+    session: Session,
+    namespace_id: int,
+    role: str,
+    data: schema.NamespaceRoleEdit,
+    updated_by: model.User,
+):
+    permissions = session.scalars(
+        select(model.Permission).where(model.Permission.code.in_(data.permissions))
+    ).all()
+
+    role_model = get_namespace_role_model(session, namespace_id, role)
+    assert role_model is not None
+
+    role_model.name = data.name
+    role_model.updated_by = updated_by
+
+    role_model.permissions.clear()
+    role_model.permissions.extend(permissions)
+
+
+def delete_namespace_role(
+    session: Session,
+    namespace_id: int,
+    role: str,
+):
+    role_model = get_namespace_role_model(session, namespace_id, role)
+    assert role_model is not None
+
+    session.delete(role_model)
+
+
+def get_namespace_role_permissions(
+    session: Session,
+    name: str,
+    role: str,
+) -> list[model.PermissionCode] | None:
+    if not get_namespace_role_exists(session, name, role):
+        return None
+
+    return list(
+        session.scalars(
+            select(model.Permission.code)
+            .join_from(model.Namespace, model.Namespace.roles)
+            .where(model.Namespace.namespace == name)
+            .where(model.NamespaceRole.name == role)
+            .join(model.NamespaceRole.permissions)
+        ).all()
     )
 
-    session.add_all([namespace, user])
+
+def get_namespace_role_users(
+    session: Session,
+    namespace_id: int,
+    role: str,
+) -> list[str] | None:
+    if not get_namespace_role_exists(session, namespace_id, role):
+        return None
+
+    return list(
+        session.scalars(
+            select(model.User.username)
+            .join_from(model.NamespaceRole, model.NamespaceRole.users)
+            .where(model.NamespaceRole.name == role)
+            .where(model.NamespaceRole.namespace_id == namespace_id)
+            .join(model.NamespaceUser.user)
+        ).all()
+    )
 
 
-def edit_namespace(session: Session, name: str, data: schema.NamespaceEdit):
-    namespace = get_namespace_model(session, name)
-    assert namespace is not None
-
-    namespace.namespace = data.name
-    namespace.description = data.description
-    namespace.homepage = data.homepage
-
-
-def delete_namespace(session: Session, name: str):
-    namespace = get_namespace_model(session, name)
-    assert namespace is not None
-
-    session.delete(namespace)
+def get_namespace_role_empty(
+    session: Session,
+    namespace_id: int,
+    role: str,
+) -> bool:
+    return session.scalars(
+        select(
+            ~select(model.NamespaceUser)
+            .join(model.NamespaceUser.role)
+            .where(model.NamespaceUser.namespace_id == namespace_id)
+            .where(model.NamespaceRole.name == role)
+            .exists()
+        )
+    ).one()
 
 
 def to_package_brief(package: model.Package) -> schema.PackageBrief:
@@ -405,21 +664,5 @@ def get_package(session: Session, name: str) -> schema.Package | None:
 
 def get_permissions(session: Session) -> list[model.Permission]:
     query = select(model.Permission)
-
-    return list(session.scalars(query).all())
-
-
-def get_namespace_permissions(
-    session: Session, namespace: str, username: str
-) -> list[model.PermissionCode]:
-    query = (
-        select(model.Permission.code)
-        .join_from(model.User, model.User.namespace_members)
-        .where(model.User.username == username)
-        .join(model.NamespaceUser.namespace)
-        .where(model.Namespace.namespace == namespace)
-        .join(model.NamespaceUser.role)
-        .join(model.NamespaceRole.permissions)
-    )
 
     return list(session.scalars(query).all())

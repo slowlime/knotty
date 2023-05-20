@@ -5,6 +5,12 @@ from pydantic import BaseModel
 
 from knotty import model
 
+# TODO: username/namespace/package name constraints
+
+
+class WithId(BaseModel):
+    id: int
+
 
 class UserRegistered(Enum):
     not_registered = 0
@@ -19,7 +25,7 @@ class UserInfo(BaseModel):
     namespaces: list[str]
 
 
-class FullUserInfo(UserInfo):
+class FullUserInfo(UserInfo, WithId):
     role: model.UserRole
 
 
@@ -61,22 +67,45 @@ class Namespace(NamespaceBase):
     roles: list["NamespaceRole"]
 
 
-class NamespaceUser(BaseModel):
+class NamespaceUserBase(BaseModel):
     username: str
+    role: str
+
+
+class NamespaceUser(NamespaceUserBase):
     added_date: datetime
     added_by: str
     updated_date: datetime
     updated_by: str
+
+
+class NamespaceUserCreate(NamespaceUserBase):
+    pass
+
+
+class NamespaceUserEdit(BaseModel):
     role: str
 
 
-class NamespaceRole(BaseModel):
+class NamespaceRoleBase(BaseModel):
+    name: str
+    permissions: list[model.PermissionCode]
+
+
+class NamespaceRole(NamespaceRoleBase):
     name: str
     created_date: datetime
     created_by: str
     updated_date: datetime
     updated_by: str
-    permissions: list[str]
+
+
+class NamespaceRoleCreate(NamespaceRoleBase):
+    pass
+
+
+class NamespaceRoleEdit(NamespaceRoleBase):
+    pass
 
 
 class PackageBasic(BaseModel):
