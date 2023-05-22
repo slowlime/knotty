@@ -251,7 +251,7 @@ def create_namespace_role(
     ):
         raise error.no_permission()
 
-    storage.create_namespace_role(session, namespace_id, body, added_by=auth)
+    storage.create_namespace_role(session, namespace_id, body, created_by=auth)
     session.commit()
 
 

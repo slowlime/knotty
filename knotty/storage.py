@@ -1,14 +1,21 @@
+from collections.abc import Iterable
+from typing import Sequence
 from typing_extensions import assert_never
 from sqlalchemy import select
+from sqlalchemy import orm
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import (
     Session,
     aliased,
     contains_eager,
+    defer,
+    joinedload,
     load_only,
     raiseload,
     selectinload,
     undefer,
 )
+from sqlalchemy.sql.base import ExecutableOption
 
 from knotty import config
 
@@ -63,6 +70,17 @@ def get_user_registered(
 
         case _:
             return schema.UserRegistered.not_registered
+
+
+def get_unknown_users(session: Session, users: set[str]) -> list[str]:
+    return list(
+        users
+        - set(
+            session.scalars(
+                select(model.User.username).where(model.User.username.in_(users))
+            ).all()
+        )
+    )
 
 
 def get_user_namespaces(session: Session, username: str) -> list[str]:
@@ -458,7 +476,7 @@ def create_namespace_role(
     session: Session,
     namespace_id: int,
     data: schema.NamespaceRoleCreate,
-    added_by: model.User,
+    created_by: model.User,
 ):
     permissions = session.scalars(
         select(model.Permission).where(model.Permission.code.in_(data.permissions))
@@ -467,8 +485,8 @@ def create_namespace_role(
     role = model.NamespaceRole(
         namespace_id=namespace_id,
         name=data.name,
-        created_by=added_by,
-        updated_by=added_by,
+        created_by=created_by,
+        updated_by=created_by,
         permissions=permissions,
     )
 
@@ -590,6 +608,43 @@ def get_packages(session: Session) -> list[schema.PackageBrief]:
     return [to_package_brief(package) for package in packages]
 
 
+def to_package_version(version: model.PackageVersion) -> schema.PackageVersion:
+    return schema.PackageVersion(
+        version=version.version,
+        downloads=version.downloads,
+        created_date=version.created_date,
+        created_by=version.created_by.username,
+        description=version.description,
+        repository=version.repository,
+        tarball=version.tarball,
+        checksums=[
+            schema.PackageChecksum(
+                algorithm=checksum.algorithm,
+                value=checksum.value.hex(),
+            )
+            for checksum in version.checksums
+        ],
+        dependencies=[
+            schema.PackageDependency(
+                package=dep.dep_package.name,
+                spec=dep.spec,
+            )
+            for dep in version.dependencies
+        ],
+    )
+
+
+def get_package_ids(session: Session, packages: list[str]) -> dict[str, int]:
+    return {
+        package.name: package.id
+        for package in session.execute(
+            select(model.Package.id, model.Package.name).where(
+                model.Package.name.in_(packages)
+            )
+        ).all()
+    }
+
+
 def get_package(session: Session, name: str) -> schema.Package | None:
     package = session.scalar(
         select(model.Package)
@@ -625,32 +680,7 @@ def get_package(session: Session, name: str) -> schema.Package | None:
         created_date=package.created_date,
         created_by=package.created_by.username,
         updated_by=package.updated_by.username,
-        versions=[
-            schema.PackageVersion(
-                version=version.version,
-                downloads=version.downloads,
-                created_date=version.created_date,
-                created_by=version.created_by.username,
-                description=version.description,
-                repository=version.repository,
-                tarball=version.tarball,
-                checksums=[
-                    schema.PackageChecksum(
-                        algorithm=checksum.algorithm,
-                        value=checksum.value.hex(),
-                    )
-                    for checksum in version.checksums
-                ],
-                dependencies=[
-                    schema.PackageDependency(
-                        package=dep.dep_package.name,
-                        spec=dep.spec,
-                    )
-                    for dep in version.dependencies
-                ],
-            )
-            for version in package.versions
-        ],
+        versions=[to_package_version(version) for version in package.versions],
         tags=[
             schema.PackageTag(
                 name=tag.name,
@@ -662,7 +692,423 @@ def get_package(session: Session, name: str) -> schema.Package | None:
     )
 
 
+def get_package_exists(session: Session, package: str) -> bool:
+    return session.scalars(
+        select(select(model.Package).filter_by(name=package).exists())
+    ).one()
+
+
+def get_package_model(session: Session, package: str) -> model.Package | None:
+    return session.scalar(select(model.Package).filter_by(name=package))
+
+
+def get_package_brief(session: Session, package: str) -> schema.PackageBrief | None:
+    pkg_model = get_package_model(session, package)
+
+    if pkg_model is None:
+        return None
+
+    return to_package_brief(pkg_model)
+
+
+def make_package_version_checksum_model(
+    data: schema.PackageChecksum,
+) -> model.PackageVersionChecksum:
+    return model.PackageVersionChecksum(
+        algorithm=data.algorithm,
+        value=bytes.fromhex(data.value),
+    )
+
+
+def make_package_version_dependency_model(
+    dependencies: dict[str, int],
+    data: schema.PackageDependency,
+) -> model.PackageVersionDependency:
+    return model.PackageVersionDependency(
+        dep_package_id=dependencies[data.package],
+        spec=data.spec,
+    )
+
+
+def make_package_version_model(
+    dependencies: dict[str, int],
+    data: schema.PackageVersionCreate,
+    created_by: model.User,
+) -> model.PackageVersion:
+    return model.PackageVersion(
+        version=data.version,
+        created_by=created_by,
+        description=data.description,
+        repository=data.repository,
+        tarball=data.tarball,
+        checksums=[
+            make_package_version_checksum_model(checksum) for checksum in data.checksums
+        ],
+        dependencies=[
+            make_package_version_dependency_model(dependencies, dep)
+            for dep in data.dependencies
+        ],
+    )
+
+
+def create_package(
+    session: Session, data: schema.PackageCreate, created_by: model.User
+):
+    package = model.Package(
+        name=data.name,
+        summary=data.summary,
+        created_by=created_by,
+        updated_by=created_by,
+    )
+
+    if data.namespace is not None:
+        namespace = get_namespace_model(session, data.namespace)
+        assert namespace is not None
+
+        package.namespace = namespace
+
+    labels = get_or_create_labels(session, data.labels)
+    package.labels.extend(labels)
+
+    owners = session.scalars(
+        select(model.User)
+        .options(defer("*"))
+        .where(model.User.username.in_(data.owners))
+    ).all()
+    package.owners.extend(owners)
+
+    dependencies = get_package_ids(
+        session,
+        [dep.package for version in data.versions for dep in version.dependencies],
+    )
+    versions = {}
+
+    for version_data in data.versions:
+        version = make_package_version_model(dependencies, version_data, created_by)
+        package.versions.append(version)
+        versions[version.version] = version
+
+    for tag in data.tags:
+        package.tags.append(
+            model.PackageTag(
+                name=tag.name,
+                version=versions[tag.version],
+            )
+        )
+
+    session.add(package)
+
+
+def edit_package(
+    session: Session, package: str, data: schema.PackageEdit, updated_by: model.User
+):
+    pkg_model = get_package_model(session, package)
+    assert pkg_model is not None
+
+    pkg_model.name = data.name
+    pkg_model.summary = data.summary
+    pkg_model.updated_by = updated_by
+
+    if data.namespace is not None:
+        namespace = get_namespace_model(session, data.namespace)
+    else:
+        namespace = None
+
+    pkg_model.namespace = namespace
+
+    labels = get_or_create_labels(session, data.labels)
+    pkg_model.labels.clear()
+    pkg_model.labels.extend(labels)
+
+    owners = session.scalars(
+        select(model.User)
+        .options(defer("*"))
+        .where(model.User.username.in_(data.owners))
+    ).all()
+    pkg_model.owners.clear()
+    pkg_model.owners.extend(owners)
+
+
+def delete_package(session: Session, package: str):
+    pkg_model = get_package_model(session, package)
+    assert pkg_model is not None
+
+    session.delete(pkg_model)
+
+
+def get_unknown_packages(session: Session, packages: set[str]) -> list[str]:
+    return list(
+        packages
+        - set(
+            session.scalars(
+                select(model.Package.name).where(model.Package.name.in_(packages))
+            ).all()
+        )
+    )
+
+
+def get_package_owner_exists(session: Session, package: str, username: str) -> bool:
+    return session.scalars(
+        select(
+            select(model.User)
+            .filter_by(username=username)
+            .join(model.User.packages)
+            .where(model.Package.name == package)
+            .exists()
+        )
+    ).one()
+
+
+def get_package_namespace(session: Session, package: str) -> str | None:
+    return session.scalar(
+        select(model.Namespace.namespace)
+        .join_from(model.Package, model.Package.namespace)
+        .where(model.Package.name == package)
+    )
+
+
+def get_package_has_dependents(session: Session, package: str) -> bool:
+    package_alias = aliased(model.Package)
+    dependent_package_alias = aliased(model.Package)
+
+    return session.scalars(
+        select(
+            select(dependent_package_alias.name)
+            .join_from(
+                package_alias, model.Package.dependents.of_type(dependent_package_alias)
+            )
+            .where(package_alias.name == package)
+            .exists()
+        )
+    ).one()
+
+
+def get_package_id(session: Session, package: str) -> int | None:
+    return session.scalar(select(model.Package.id).filter_by(name=package))
+
+
+def get_package_version_options() -> list[ExecutableOption]:
+    return [
+        joinedload(model.PackageVersion.created_by).load_only(model.User.username),
+        selectinload(model.PackageVersion.checksums),
+        selectinload(model.PackageVersion.dependencies)
+        .joinedload(model.PackageVersionDependency.dep_package)
+        .load_only(model.Package.name),
+        raiseload("*"),
+    ]
+
+
+def get_package_versions(
+    session: Session, package_id: int
+) -> list[schema.PackageVersion]:
+    versions = session.scalars(
+        select(model.PackageVersion)
+        .filter_by(package_id=package_id)
+        .options(*get_package_version_options())
+    ).all()
+
+    return [to_package_version(version) for version in versions]
+
+
+def get_package_version(
+    session: Session, package_id: int, version: str
+) -> schema.PackageVersion | None:
+    version_model = session.scalar(
+        select(model.PackageVersion)
+        .filter_by(package_id=package_id, version=version)
+        .options(*get_package_version_options())
+    )
+
+    if version_model is None:
+        return None
+
+    return to_package_version(version_model)
+
+
+def get_package_version_model(
+    session: Session, package_id: int, version: str
+) -> model.PackageVersion | None:
+    return session.scalar(
+        select(model.PackageVersion).filter_by(package_id=package_id, version=version)
+    )
+
+
+def create_package_version(
+    session: Session,
+    package_id: int,
+    data: schema.PackageVersionCreate,
+    created_by: model.User,
+):
+    package = session.get(model.Package, package_id)
+    assert package is not None
+
+    dependencies = get_package_ids(session, [dep.package for dep in data.dependencies])
+    version = make_package_version_model(dependencies, data, created_by)
+    package.versions.append(version)
+
+
+def edit_package_version(
+    session: Session,
+    package_id: int,
+    version: str,
+    data: schema.PackageVersionEdit,
+    updated_by: model.User,
+):
+    package = session.get(model.Package, package_id)
+    assert package is not None
+
+    version_model = get_package_version_model(session, package_id, version)
+    assert version_model is not None
+
+    version_model.version = data.version
+    version_model.description = data.description
+    version_model.repository = data.repository
+    version_model.tarball = data.tarball
+
+    version_model.checksums.clear()
+    version_model.checksums.extend(
+        make_package_version_checksum_model(checksum) for checksum in data.checksums
+    )
+
+    dependencies = get_package_ids(session, [dep.package for dep in data.dependencies])
+    version_model.dependencies.clear()
+    version_model.dependencies.extend(
+        make_package_version_dependency_model(dependencies, dep)
+        for dep in data.dependencies
+    )
+
+    package.updated_by = updated_by
+
+
+def delete_package_version(session: Session, package_id: int, version: str):
+    package_version = get_package_version_model(session, package_id, version)
+    assert package_version is not None
+
+    session.delete(package_version)
+
+
+def get_package_version_exists(session: Session, package_id: int, version: str) -> bool:
+    return session.scalars(
+        select(
+            select(model.PackageVersion)
+            .filter_by(package_id=package_id, version=version)
+            .exists()
+        )
+    ).one()
+
+
+def get_package_version_is_tagged(
+    session: Session, package_id: int, version: str
+) -> bool:
+    return session.scalars(
+        select(
+            select(model.PackageTag)
+            .select_from(model.PackageVersion)
+            .filter_by(package_id=package_id, version=version)
+            .join(model.PackageVersion.tagged_as)
+            .exists()
+        )
+    ).one()
+
+
+def get_package_tags(session: Session, package_id: int) -> list[schema.PackageTag]:
+    return [
+        schema.PackageTag(
+            name=tag.name,
+            version=tag.version,
+        )
+        for tag in session.scalars(
+            select(model.PackageTag.name, model.PackageVersion.version)
+            .where(model.PackageTag.package_id == package_id)
+            .join(model.PackageTag.version)
+        ).all()
+    ]
+
+
+def get_package_tag_model(
+    session: Session, package_id: int, tag: str
+) -> model.PackageTag | None:
+    return session.scalar(
+        select(model.PackageTag).filter_by(package_id=package_id, name=tag)
+    )
+
+
+def get_package_tag_exists(session: Session, package_id: int, tag: str) -> bool:
+    return session.scalars(
+        select(
+            select(model.PackageTag).filter_by(package_id=package_id, name=tag).exists()
+        )
+    ).one()
+
+
+def get_package_tag(
+    session: Session, package_id: int, tag: str
+) -> schema.PackageTag | None:
+    result = session.scalar(
+        select(model.PackageTag.name, model.PackageVersion.version)
+        .select_from(model.PackageTag)
+        .filter_by(package_id=package_id, name=tag)
+        .join(model.PackageTag.version)
+    )
+
+    if result is None:
+        return None
+
+    return schema.PackageTag(
+        name=result.name,
+        version=result.version,
+    )
+
+
+def create_package_tag(session: Session, package_id: int, data: schema.PackageTag):
+    package = session.get(model.Package, package_id)
+    assert package is not None
+
+    version = get_package_version_model(session, package_id, data.version)
+    assert version is not None
+
+    package.tags.append(
+        model.PackageTag(
+            name=data.name,
+            version=version,
+        )
+    )
+
+
+def edit_package_tag(
+    session: Session, package_id: int, tag: str, data: schema.PackageTag
+):
+    tag_model = get_package_tag_model(session, package_id, tag)
+    assert tag_model is not None
+
+    version = get_package_version_model(session, package_id, data.version)
+    assert version is not None
+
+    tag_model.name = data.name
+    tag_model.version = version
+
+
+def delete_package_tag(
+    session: Session, package_id: int, tag: str
+):
+    tag_model = get_package_tag_model(session, package_id, tag)
+    assert tag_model is not None
+
+    session.delete(tag_model)
+
+
 def get_permissions(session: Session) -> list[model.Permission]:
     query = select(model.Permission)
 
     return list(session.scalars(query).all())
+
+
+def get_or_create_labels(
+    session: Session, labels: Iterable[str]
+) -> Sequence[model.Label]:
+    return session.scalars(
+        insert(model.Label)
+        .on_conflict_do_nothing(index_elements=model.Label.name)
+        .returning(model.Label),
+        [{"name": label} for label in labels],
+    ).all()

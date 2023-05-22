@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from fastapi import HTTPException, status
 
 
@@ -65,4 +66,49 @@ def role_not_empty() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Cannot remove namespace role with members",
+    )
+
+
+def unknown_owners(usernames: list[str]) -> HTTPException:
+    detail = "Owners list includes unknown users"
+
+    if usernames:
+        detail += " " + ", ".join(usernames)
+
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=detail,
+    )
+
+
+def unknown_dependencies(packages: list[str]) -> HTTPException:
+    match packages:
+        case []:
+            detail = "Package requires unknown dependencies"
+
+        case [package]:
+            detail = f"Package requires unknown dependency {package}"
+
+        case _:
+            detail = "Package requires unknown dependencies {}".format(
+                ", ".join(packages)
+            )
+
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=detail,
+    )
+
+
+def has_dependents() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Package has dependent packages",
+    )
+
+
+def has_referring_tags() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Package has tags referring to this version",
     )

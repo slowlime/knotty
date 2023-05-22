@@ -3,6 +3,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from knotty import model, storage
+from knotty.db import SessionDep
 from knotty.error import no_permission
 from knotty.auth import AuthDep
 
@@ -124,6 +125,74 @@ def check_namespace_edit(
 
     if model.PermissionCode.namespace_edit in namespace_permissions:
         return True
+
+
+def can_create_package(
+    user_role_check: Annotated[bool | None, Depends(check_user_role)],
+) -> bool:
+    return bool(user_role_check)
+
+
+def is_package_owner(
+    session: SessionDep,
+    auth: AuthDep,
+    package: str,
+) -> bool:
+    return storage.get_package_owner_exists(session, package, auth.username)
+
+
+def can_edit_package(
+    session: SessionDep,
+    auth: AuthDep,
+    user_role_check: Annotated[bool | None, Depends(check_user_role)],
+    is_owner: Annotated[bool, Depends(is_package_owner)],
+    package: str,
+) -> bool:
+    if user_role_check is not None:
+        return user_role_check
+
+    if is_owner:
+        return True
+
+    namespace = storage.get_package_namespace(session, package)
+
+    if namespace is None:
+        return False
+
+    user_namespace_permissions = get_namespace_user_permissions(
+        session, auth, namespace
+    )
+
+    return has_namespace_permission(
+        set(user_namespace_permissions), model.PermissionCode.package_edit
+    )
+
+
+def can_delete_package(
+    session: SessionDep,
+    auth: AuthDep,
+    user_role_check: Annotated[bool | None, Depends(check_user_role)],
+    is_owner: Annotated[bool, Depends(is_package_owner)],
+    package: str,
+) -> bool:
+    if user_role_check is not None:
+        return user_role_check
+
+    if is_owner:
+        return True
+
+    namespace = storage.get_package_namespace(session, package)
+
+    if namespace is None:
+        return False
+
+    user_namespace_permissions = get_namespace_user_permissions(
+        session, auth, namespace
+    )
+
+    return has_namespace_permission(
+        set(user_namespace_permissions), model.PermissionCode.namespace_admin
+    )
 
 
 def require(check: bool | None, allow_by_default: bool = False):

@@ -1,5 +1,5 @@
+from enum import Enum, unique
 from datetime import datetime
-from enum import Enum
 from typing import List
 from sqlalchemy import (
     Column,
@@ -8,12 +8,10 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     func,
-    select,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
-    column_property,
     mapped_column,
     relationship,
 )
@@ -134,6 +132,8 @@ class PermissionCode(Enum):
     namespace_owner = "namespace-owner"
     namespace_admin = "namespace-admin"
     namespace_edit = "namespace-edit"
+    package_create = "package-create"
+    package_edit = "package-edit"
 
 
 class Permission(Base):
@@ -182,6 +182,7 @@ class Package(Base):
     updated_date: Mapped[datetime] = mapped_column(default=func.now(),
                                                    onupdate=func.now())
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
+    downloads: Mapped[int] = mapped_column(default=0)
 
     namespace: Mapped[Namespace | None] = relationship(back_populates="packages")
     created_by: Mapped[User] = relationship(foreign_keys=created_by_user_id)
@@ -210,9 +211,6 @@ class Package(Base):
         passive_deletes=True,
     )
 
-    # defined below
-    downloads: Mapped[int]
-
 
 class PackageVersion(Base):
     __tablename__ = "package_versions"
@@ -222,7 +220,7 @@ class PackageVersion(Base):
         ForeignKey(Package.id, ondelete="CASCADE", onupdate="CASCADE")
     )
     version: Mapped[str]
-    downloads: Mapped[int]
+    downloads: Mapped[int] = mapped_column(default=0)
     created_date: Mapped[datetime] = mapped_column(default=func.now())
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
     description: Mapped[str]
@@ -246,11 +244,22 @@ class PackageVersion(Base):
     __table_args__ = (UniqueConstraint("package_id", "version"),)
 
 
-Package.downloads = column_property(
-    select(func.sum(PackageVersion.downloads))
-    .where(PackageVersion.package_id == Package.id)
-    .scalar_subquery()
-)
+@unique
+class ChecksumAlgorithm(Enum):
+    md5 = "md5", 16
+    sha1 = "sha1", 20
+    sha256 = "sha256", 32
+    sha512 = "sha512", 64
+
+    def __new__(cls, name, length):
+        obj = object.__new__(cls)
+        obj._value_ = name
+        obj.length = length # type: ignore
+
+        return obj
+
+    def __str__(self) -> str:
+        return self._value_
 
 
 class PackageVersionChecksum(Base):
@@ -260,7 +269,7 @@ class PackageVersionChecksum(Base):
         ForeignKey(PackageVersion.id, ondelete="CASCADE", onupdate="CASCADE"),
         primary_key=True,
     )
-    algorithm: Mapped[str] = mapped_column(primary_key=True)
+    algorithm: Mapped[ChecksumAlgorithm] = mapped_column(primary_key=True)
     value: Mapped[bytes]
 
     version: Mapped[PackageVersion] = relationship(back_populates="checksums")
