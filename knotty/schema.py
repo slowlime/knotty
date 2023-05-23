@@ -1,11 +1,62 @@
 from datetime import datetime
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel, validator
+import semver
+from pydantic import (
+    AnyHttpUrl,
+    AnyUrl,
+    BaseModel,
+    ConstrainedStr,
+    EmailStr,
+    Field,
+    validator,
+)
 
 from knotty import model
 
-# TODO: username/namespace/package name constraints
+USERNAME_REGEX = r"^[a-zA-Z][a-zA-Z0-9-]*$"
+NAMESPACE_NAME_REGEX = r"^[a-zA-Z][a-zA-Z0-9-]*$"
+NAMESPACE_ROLE_REGEX = r"^[a-zA-Z][a-zA-Z0-9-]*$"
+PACKAGE_REGEX = r"^[a-z][a-z0-9-]*$"
+PACKAGE_LABEL_REGEX = r"^[a-z][a-z0-9-]*$"
+PACKAGE_TAG_REGEX = r"^[a-z][a-z0-9-]*$"
+
+Username = Annotated[str, Field(min_length=1, max_length=32, regex=USERNAME_REGEX)]
+Email = Annotated[EmailStr, Field(max_length=64)]
+NamespaceName = Annotated[
+    str, Field(min_length=1, max_length=32, regex=NAMESPACE_NAME_REGEX)
+]
+NamespaceRoleName = Annotated[
+    str, Field(min_length=1, max_length=32, regex=NAMESPACE_ROLE_REGEX)
+]
+PackageName = Annotated[str, Field(min_length=1, max_length=32, regex=PACKAGE_REGEX)]
+PackageLabel = Annotated[
+    str, Field(min_length=1, max_length=32, regex=PACKAGE_LABEL_REGEX)
+]
+PackageDependencySpec = Annotated[str, Field(min_length=1, max_length=40)]
+PackageTagName = Annotated[
+    str, Field(min_length=1, max_length=32, regex=PACKAGE_TAG_REGEX)
+]
+
+
+class ChecksumValue(ConstrainedStr):
+    to_lower = True
+    regex = r"^[a-f0-9]+$"
+
+
+class Version(semver.version.Version):
+    @classmethod
+    def _parse(cls, version):
+        return cls.parse(version)
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls._parse
+
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        field_schema.update(examples=["1.0.2", "2.15.3-alpha", "21.3.15-beta+12345"])
 
 
 class WithId(BaseModel):
@@ -19,8 +70,8 @@ class UserRegistered(Enum):
 
 
 class UserInfo(BaseModel):
-    username: str
-    email: str
+    username: Username
+    email: Email
     registered: datetime
     namespaces: list[str]
 
@@ -35,9 +86,9 @@ class AuthToken(BaseModel):
 
 
 class UserRegister(BaseModel):
-    username: str
-    email: str
-    password: str
+    username: Username
+    email: Email
+    password: Annotated[str, Field(max_length=1024)]
 
 
 class UserCreate(BaseModel):
@@ -48,9 +99,9 @@ class UserCreate(BaseModel):
 
 
 class NamespaceBase(BaseModel):
-    name: str
-    description: str
-    homepage: str | None
+    name: NamespaceName
+    description: Annotated[str, Field(max_length=131072)]
+    homepage: Annotated[AnyHttpUrl, Field(max_length=2048)] | None
 
 
 class NamespaceCreate(NamespaceBase):
@@ -88,12 +139,11 @@ class NamespaceUserEdit(BaseModel):
 
 
 class NamespaceRoleBase(BaseModel):
-    name: str
+    name: NamespaceRoleName
     permissions: list[model.PermissionCode]
 
 
 class NamespaceRole(NamespaceRoleBase):
-    name: str
     created_date: datetime
     created_by: str
     updated_date: datetime
@@ -109,8 +159,8 @@ class NamespaceRoleEdit(NamespaceRoleBase):
 
 
 class PackageBasic(BaseModel):
-    name: str
-    summary: str
+    name: PackageName
+    summary: Annotated[str, Field(max_length=256)]
 
 
 class PackageBrief(PackageBasic):
@@ -131,7 +181,7 @@ class Package(PackageBrief):
 
 class PackageCreate(PackageBasic):
     namespace: str | None
-    labels: set[str]
+    labels: set[PackageLabel]
     owners: set[str]
     versions: list["PackageVersionCreate"]
     tags: list["PackageTag"]
@@ -140,7 +190,7 @@ class PackageCreate(PackageBasic):
     def versions_must_not_repeat(
         cls, v: list["PackageVersionCreate"]
     ) -> list["PackageVersionCreate"]:
-        versions = set[str]()
+        versions = set[Version]()
 
         for version in v:
             if version.version in versions:
@@ -180,15 +230,15 @@ class PackageCreate(PackageBasic):
 
 class PackageEdit(PackageBasic):
     namespace: str | None
-    labels: set[str]
+    labels: set[PackageLabel]
     owners: set[str]
 
 
 class PackageVersionBase(BaseModel):
-    version: str
-    description: str
-    repository: str | None
-    tarball: str | None
+    version: Version
+    description: Annotated[str, Field(max_length=131072)]
+    repository: Annotated[AnyUrl, Field(max_length=2048)] | None
+    tarball: Annotated[AnyUrl, Field(max_length=2048)] | None
     checksums: list["PackageChecksum"]
     dependencies: list["PackageDependency"]
 
@@ -243,7 +293,7 @@ class PackageVersionEdit(PackageVersionBase):
 
 class PackageChecksum(BaseModel):
     algorithm: model.ChecksumAlgorithm
-    value: str
+    value: ChecksumValue
 
     @validator("value")
     def length_must_be_valid(cls, v, values):
@@ -257,11 +307,11 @@ class PackageChecksum(BaseModel):
 
 class PackageDependency(BaseModel):
     package: str
-    spec: str
+    spec: PackageDependencySpec
 
 
 class PackageTag(BaseModel):
-    name: str
+    name: PackageTagName
     version: str
 
 

@@ -13,11 +13,13 @@ passlib = {extras = ["argon2"], version = "^1.7.4"}
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 toml = "^0.10.2"
 psycopg = "^3.1.9"
+semver = "^3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.2.0"
 black = "^23.3.0"
 ruff = "^0.0.261"
+alembic = "^1.11.1"
 
 [build-system]
 requires = ["poetry-core"]

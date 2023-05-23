@@ -4,7 +4,9 @@ from typing import List
 from sqlalchemy import (
     Column,
     ForeignKey,
+    Identity,
     Integer,
+    MetaData,
     Table,
     UniqueConstraint,
     func,
@@ -12,13 +14,22 @@ from sqlalchemy import (
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
+    column_property,
     mapped_column,
     relationship,
 )
 
 
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(
+        naming_convention={
+            "ix": "ix_%(column_0_label)s",
+            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "ck": "ck_%(table_name)s_%(constraint_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "pk": "pk_%(table_name)s",
+        }
+    )
 
 
 class UserRole(Enum):
@@ -30,9 +41,9 @@ class UserRole(Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     username: Mapped[str] = mapped_column(unique=True)
-    email: Mapped[str]
+    email: Mapped[str] = mapped_column(unique=True)
     pwhash: Mapped[str]
     registered: Mapped[datetime]
     role: Mapped[UserRole]
@@ -49,7 +60,7 @@ class User(Base):
 class Namespace(Base):
     __tablename__ = "namespace"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     namespace: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str]
     homepage: Mapped[str | None]
@@ -92,15 +103,16 @@ class NamespaceUser(Base):
 class NamespaceRole(Base):
     __tablename__ = "namespace_roles"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     namespace_id: Mapped[int] = mapped_column(
         ForeignKey(Namespace.id, ondelete="CASCADE", onupdate="CASCADE")
     )
     name: Mapped[str]
     created_date: Mapped[datetime] = mapped_column(default=func.now())
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
-    updated_date: Mapped[datetime] = mapped_column(default=func.now(),
-                                                   onupdate=func.now())
+    updated_date: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now()
+    )
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
 
     namespace: Mapped[Namespace] = relationship(back_populates="roles")
@@ -109,9 +121,7 @@ class NamespaceRole(Base):
     permissions: Mapped[List["Permission"]] = relationship(
         secondary=lambda: namespace_role_permission_table,
     )
-    users: Mapped[List[NamespaceUser]] = relationship(
-        back_populates="role"
-    )
+    users: Mapped[List[NamespaceUser]] = relationship(back_populates="role")
 
     __table_args__ = (UniqueConstraint("namespace_id", "name"),)
 
@@ -121,7 +131,7 @@ namespace_role_permission_table = Table(
     Base.metadata,
     Column(
         "role_id",
-        ForeignKey(NamespaceRole.id, ondelete="CASCADE", onupdated="CASCADE"),
+        ForeignKey(NamespaceRole.id, ondelete="CASCADE", onupdate="CASCADE"),
         primary_key=True,
     ),
     Column("permission_id", ForeignKey("permissions.id"), primary_key=True),
@@ -139,7 +149,7 @@ class PermissionCode(Enum):
 class Permission(Base):
     __tablename__ = "permissions"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     code: Mapped[PermissionCode] = mapped_column(unique=True)
     description: Mapped[str]
 
@@ -171,7 +181,7 @@ package_owner_table = Table(
 class Package(Base):
     __tablename__ = "packages"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
     namespace_id: Mapped[int | None] = mapped_column(
         ForeignKey(Namespace.id, ondelete="SET NULL", onupdate="SET NULL")
@@ -179,8 +189,9 @@ class Package(Base):
     summary: Mapped[str]
     created_date: Mapped[datetime] = mapped_column(default=func.now())
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
-    updated_date: Mapped[datetime] = mapped_column(default=func.now(),
-                                                   onupdate=func.now())
+    updated_date: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now()
+    )
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
     downloads: Mapped[int] = mapped_column(default=0)
 
@@ -215,7 +226,7 @@ class Package(Base):
 class PackageVersion(Base):
     __tablename__ = "package_versions"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     package_id: Mapped[int] = mapped_column(
         ForeignKey(Package.id, ondelete="CASCADE", onupdate="CASCADE")
     )
@@ -254,7 +265,7 @@ class ChecksumAlgorithm(Enum):
     def __new__(cls, name, length):
         obj = object.__new__(cls)
         obj._value_ = name
-        obj.length = length # type: ignore
+        obj.length = length  # type: ignore
 
         return obj
 
@@ -307,7 +318,7 @@ class PackageTag(Base):
 class Label(Base):
     __tablename__ = "labels"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
 
     packages: Mapped[List[Package]] = relationship(back_populates="labels")
