@@ -38,3 +38,6 @@ def load_config() -> Config:
     path = os.environ.get(CONFIG_PATH_ENVIRON, CONFIG_PATH_DEFAULT)
 
     return Config.load_from_toml(Path(path))
+
+
+config = load_config()

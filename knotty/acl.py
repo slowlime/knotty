@@ -1,6 +1,5 @@
-from typing import Annotated, Literal
+from typing import Annotated
 from fastapi import Depends
-from sqlalchemy.orm import Session
 
 from knotty import model, storage
 from knotty.db import SessionDep
@@ -43,7 +42,7 @@ def can_edit_user(
 
 
 def get_namespace_user_permissions(
-    session: Session, auth: AuthDep, namespace: str
+    session: SessionDep, auth: AuthDep, namespace: str
 ) -> list[model.PermissionCode]:
     return storage.get_namespace_user_permissions(session, namespace, auth.username)
 

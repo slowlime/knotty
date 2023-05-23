@@ -1,15 +1,19 @@
 from datetime import datetime
 
 from typing import Annotated
-from fastapi import Depends, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from .. import acl, app, error, schema, config, storage
-from ..auth import AuthDep, JwtTokenData, auth_user, create_token, hash_password
+from knotty.config import config
+from .. import acl, error, schema, storage
+from ..auth import JwtTokenData, auth_user, create_token, hash_password
 from ..db import SessionDep
 
 
-@app.get("/user/{username}")
+router = APIRouter()
+
+
+@router.get("/user/{username}")
 def get_user(
     session: SessionDep,
     username: str,
@@ -36,7 +40,7 @@ def get_user(
     )
 
 
-@app.post("/login")
+@router.post("/login")
 def login(
     session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
 ) -> schema.AuthToken:
@@ -52,7 +56,7 @@ def login(
     return schema.AuthToken(access_token=token)
 
 
-@app.post("/user", status_code=status.HTTP_201_CREATED)
+@router.post("/user", status_code=status.HTTP_201_CREATED)
 def register(session: SessionDep, body: schema.UserRegister) -> None:
     match storage.get_user_registered(session, body.username, body.email):
         case schema.UserRegistered.username_taken:

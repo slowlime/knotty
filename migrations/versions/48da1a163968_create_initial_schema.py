@@ -33,7 +33,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "namespace",
+        "namespaces",
         sa.Column("id", sa.Integer(), sa.Identity(always=True), nullable=False),
         sa.Column(
             "namespace", sa.String(32, collation="case_insensitive"), nullable=False
@@ -45,17 +45,17 @@ def upgrade() -> None:
         sa.UniqueConstraint("namespace", name=op.f("uq_namespace_namespace")),
     )
 
-    op.create_table(
+    permissions_table = op.create_table(
         "permissions",
         sa.Column("id", sa.Integer(), sa.Identity(always=True), nullable=False),
         sa.Column(
             "code",
             sa.Enum(
-                "namespace_owner",
-                "namespace_admin",
-                "namespace_edit",
-                "package_create",
-                "package_edit",
+                "namespace-owner",
+                "namespace-admin",
+                "namespace-edit",
+                "package-create",
+                "package-edit",
                 name="permissioncode",
                 native_enum=False,
                 create_constraint=True,
@@ -78,8 +78,14 @@ def upgrade() -> None:
         sa.Column("registered", sa.DateTime(), nullable=False),
         sa.Column(
             "role",
-            sa.Enum("regular", "admin", "banned", name="userrole", native_enum=False,
-            create_constraint=True),
+            sa.Enum(
+                "regular",
+                "admin",
+                "banned",
+                name="userrole",
+                native_enum=False,
+                create_constraint=True,
+            ),
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
@@ -103,7 +109,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["namespace_id"],
-            ["namespace.id"],
+            ["namespaces.id"],
             name=op.f("fk_namespace_roles_namespace_id_namespace"),
             onupdate="CASCADE",
             ondelete="CASCADE",
@@ -145,7 +151,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["namespace_id"],
-            ["namespace.id"],
+            ["namespaces.id"],
             name=op.f("fk_packages_namespace_id_namespace"),
             onupdate="SET NULL",
             ondelete="SET NULL",
@@ -198,7 +204,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["namespace_id"],
-            ["namespace.id"],
+            ["namespaces.id"],
             name=op.f("fk_namespace_users_namespace_id_namespace"),
             onupdate="CASCADE",
             ondelete="CASCADE",
@@ -371,6 +377,36 @@ def upgrade() -> None:
         ),
     )
 
+    op.bulk_insert(
+        permissions_table,
+        [
+            {
+                "code": "namespace-owner",
+                "description": "Namespace owner "
+                + "(can do anything to the namespace, including deleting it)",
+            },
+            {
+                "code": "namespace-admin",
+                "description": "Namespace administrator "
+                + "(can manage namespace users and roles)",
+            },
+            {
+                "code": "namespace-edit",
+                "description": "Namespace editor "
+                + "(can edit namespace info and its packages)",
+            },
+            {
+                "code": "package-create",
+                "description": "A permission to create packages in the namespace",
+            },
+            {
+                "code": "package-edit",
+                "description": "A permission to edit already existing packages "
+                + "in the namespace",
+            },
+        ],
+    )
+
 
 def downgrade() -> None:
     op.drop_table("package_version_dependencies")
@@ -385,6 +421,6 @@ def downgrade() -> None:
     op.drop_table("namespace_roles")
     op.drop_table("users")
     op.drop_table("permissions")
-    op.drop_table("namespace")
+    op.drop_table("namespaces")
     op.drop_table("labels")
     op.drop_collation("case_insensitive")  # type: ignore

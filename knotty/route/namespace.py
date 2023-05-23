@@ -1,10 +1,13 @@
 from typing import Annotated
-from fastapi import Depends, status
+from fastapi import APIRouter, Depends, status
 
 from knotty import acl, model
 from knotty.auth import AuthDep
-from .. import app, error, schema, storage
+from .. import error, schema, storage
 from ..db import SessionDep
+
+
+router = APIRouter()
 
 
 def check_namespace_exists(session: SessionDep, namespace: str) -> int:
@@ -16,7 +19,7 @@ def check_namespace_exists(session: SessionDep, namespace: str) -> int:
     return namespace_id
 
 
-@app.post("/namespace", status_code=status.HTTP_201_CREATED)
+@router.post("/namespace", status_code=status.HTTP_201_CREATED)
 def create_namespace(
     session: SessionDep,
     body: schema.NamespaceCreate,
@@ -32,7 +35,7 @@ def create_namespace(
     session.commit()
 
 
-@app.get("/namespace/{namespace}")
+@router.get("/namespace/{namespace}")
 def get_namespace(session: SessionDep, namespace: str) -> schema.Namespace:
     ns = storage.get_namespace(session, namespace)
 
@@ -42,7 +45,7 @@ def get_namespace(session: SessionDep, namespace: str) -> schema.Namespace:
     return ns
 
 
-@app.post(
+@router.post(
     "/namespace/{namespace}",
     dependencies=[Depends(check_namespace_exists)],
 )
@@ -65,7 +68,7 @@ def edit_namespace(
     session.commit()
 
 
-@app.delete(
+@router.delete(
     "/namespace/{namespace}",
     dependencies=[Depends(check_namespace_exists)],
 )
@@ -80,7 +83,7 @@ def delete_namespace(
     session.commit()
 
 
-@app.get(
+@router.get(
     "/namespace/{namespace}/package", dependencies=[Depends(check_namespace_exists)]
 )
 def get_namespace_packages(
@@ -89,7 +92,9 @@ def get_namespace_packages(
     return storage.get_namespace_packages(session, namespace)
 
 
-@app.get("/namespace/{namespace}/user", dependencies=[Depends(check_namespace_exists)])
+@router.get(
+    "/namespace/{namespace}/user", dependencies=[Depends(check_namespace_exists)]
+)
 def get_namespace_users(
     session: SessionDep,
     namespace: str,
@@ -97,7 +102,7 @@ def get_namespace_users(
     return storage.get_namespace_users(session, namespace)
 
 
-@app.post(
+@router.post(
     "/namespace/{namespace}/user",
     status_code=status.HTTP_201_CREATED,
 )
@@ -135,7 +140,7 @@ def create_namespace_user(
     session.commit()
 
 
-@app.get("/namespace/{namespace}/user/{username}")
+@router.get("/namespace/{namespace}/user/{username}")
 def get_namespace_user(
     session: SessionDep,
     namespace: str,
@@ -149,7 +154,7 @@ def get_namespace_user(
     return user
 
 
-@app.post("/namespace/{namespace}/user/{username}")
+@router.post("/namespace/{namespace}/user/{username}")
 def edit_namespace_user(
     session: SessionDep,
     auth: AuthDep,
@@ -191,7 +196,7 @@ def edit_namespace_user(
     session.commit()
 
 
-@app.delete("/namespace/{namespace}/user/{username}")
+@router.delete("/namespace/{namespace}/user/{username}")
 def delete_namespace_user(
     session: SessionDep,
     auth: AuthDep,
@@ -223,7 +228,9 @@ def delete_namespace_user(
     session.commit()
 
 
-@app.get("/namespace/{namespace}/role", dependencies=[Depends(check_namespace_exists)])
+@router.get(
+    "/namespace/{namespace}/role", dependencies=[Depends(check_namespace_exists)]
+)
 def get_namespace_roles(
     session: SessionDep,
     namespace: str,
@@ -231,7 +238,7 @@ def get_namespace_roles(
     return storage.get_namespace_roles(session, namespace)
 
 
-@app.post("/namespace/{namespace}/role")
+@router.post("/namespace/{namespace}/role")
 def create_namespace_role(
     session: SessionDep,
     auth: AuthDep,
@@ -255,7 +262,7 @@ def create_namespace_role(
     session.commit()
 
 
-@app.get("/namespace/{namespace}/role/{role}")
+@router.get("/namespace/{namespace}/role/{role}")
 def get_namespace_role(
     session: SessionDep,
     namespace: str,
@@ -269,7 +276,7 @@ def get_namespace_role(
     return result
 
 
-@app.post("/namespace/{namespace}/role/{role}")
+@router.post("/namespace/{namespace}/role/{role}")
 def edit_namespace_role(
     session: SessionDep,
     auth: AuthDep,
@@ -319,7 +326,7 @@ def edit_namespace_role(
     session.commit()
 
 
-@app.delete("/namespace/{namespace}/role/{role}")
+@router.delete("/namespace/{namespace}/role/{role}")
 def delete_namespace_role(
     session: SessionDep,
     namespace: str,

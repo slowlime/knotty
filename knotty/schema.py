@@ -23,7 +23,6 @@ PACKAGE_LABEL_REGEX = r"^[a-z][a-z0-9-]*$"
 PACKAGE_TAG_REGEX = r"^[a-z][a-z0-9-]*$"
 
 Username = Annotated[str, Field(min_length=1, max_length=32, regex=USERNAME_REGEX)]
-Email = Annotated[EmailStr, Field(max_length=64)]
 NamespaceName = Annotated[
     str, Field(min_length=1, max_length=32, regex=NAMESPACE_NAME_REGEX)
 ]
@@ -71,7 +70,7 @@ class UserRegistered(Enum):
 
 class UserInfo(BaseModel):
     username: Username
-    email: Email
+    email: EmailStr
     registered: datetime
     namespaces: list[str]
 
@@ -87,8 +86,15 @@ class AuthToken(BaseModel):
 
 class UserRegister(BaseModel):
     username: Username
-    email: Email
+    email: EmailStr
     password: Annotated[str, Field(max_length=1024)]
+
+    @validator("email")
+    def email_must_not_be_too_long(cls, v: EmailStr) -> EmailStr:
+        if len(v) >= 64:
+            raise ValueError("value is too long (max 64)")
+
+        return v
 
 
 class UserCreate(BaseModel):
@@ -316,8 +322,17 @@ class PackageTag(BaseModel):
 
 
 class Permission(BaseModel):
-    code: str
+    code: model.PermissionCode
     description: str
 
     class Config:
         orm_mode = True
+
+
+Namespace.update_forward_refs()
+Package.update_forward_refs()
+PackageCreate.update_forward_refs()
+PackageVersionBase.update_forward_refs()
+PackageVersion.update_forward_refs()
+PackageVersionCreate.update_forward_refs()
+PackageVersionEdit.update_forward_refs()

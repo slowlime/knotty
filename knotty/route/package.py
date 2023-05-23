@@ -1,10 +1,13 @@
 from typing import Annotated
 
-from fastapi import Depends, status
+from fastapi import APIRouter, Depends, status
 from knotty import acl
 from knotty.auth import AuthDep
-from .. import app, error, schema, storage, model
+from .. import error, schema, storage, model
 from ..db import SessionDep
+
+
+router = APIRouter()
 
 
 def can_edit_owners(
@@ -43,12 +46,12 @@ def get_package_id(session: SessionDep, package: str) -> int:
     return package_id
 
 
-@app.get("/package")
+@router.get("/package")
 def get_packages(session: SessionDep) -> list[schema.PackageBrief]:
     return storage.get_packages(session)
 
 
-@app.post("/package", status_code=status.HTTP_201_CREATED)
+@router.post("/package", status_code=status.HTTP_201_CREATED)
 def create_package(
     session: SessionDep,
     auth: AuthDep,
@@ -95,7 +98,7 @@ def create_package(
     session.commit()
 
 
-@app.get("/package/{package}")
+@router.get("/package/{package}")
 def get_package(session: SessionDep, package: str) -> schema.Package:
     p = storage.get_package(session, package)
 
@@ -105,7 +108,7 @@ def get_package(session: SessionDep, package: str) -> schema.Package:
     return p
 
 
-@app.post("/package/{package}")
+@router.post("/package/{package}")
 def edit_package(
     session: SessionDep,
     auth: AuthDep,
@@ -164,7 +167,7 @@ def edit_package(
     session.commit()
 
 
-@app.delete("/package/{package}")
+@router.delete("/package/{package}")
 def delete_package(
     session: SessionDep,
     package: str,
@@ -179,7 +182,7 @@ def delete_package(
     session.commit()
 
 
-@app.get("/package/{package}/version")
+@router.get("/package/{package}/version")
 def get_package_versions(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -187,7 +190,7 @@ def get_package_versions(
     return storage.get_package_versions(session, package_id)
 
 
-@app.post("/package/{package}/version", status_code=status.HTTP_201_CREATED)
+@router.post("/package/{package}/version", status_code=status.HTTP_201_CREATED)
 def create_package_version(
     session: SessionDep,
     auth: AuthDep,
@@ -197,7 +200,7 @@ def create_package_version(
 ):
     acl.require(can_edit_check)
 
-    if storage.get_package_version_exists(session, package_id, body.version):
+    if storage.get_package_version_exists(session, package_id, str(body.version)):
         raise error.already_exists("Version")
 
     unknown_deps = storage.get_unknown_packages(
@@ -212,7 +215,7 @@ def create_package_version(
     session.commit()
 
 
-@app.get("/package/{package}/version/{version}")
+@router.get("/package/{package}/version/{version}")
 def get_package_version(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -226,7 +229,7 @@ def get_package_version(
     return result
 
 
-@app.post("/package/{package}/version/{version}")
+@router.post("/package/{package}/version/{version}")
 def edit_package_version(
     session: SessionDep,
     auth: AuthDep,
@@ -243,7 +246,7 @@ def edit_package_version(
     acl.require(can_edit_check)
 
     if current_version.version != body.version:
-        if storage.get_package_version_exists(session, package_id, body.version):
+        if storage.get_package_version_exists(session, package_id, str(body.version)):
             raise error.already_exists("Version")
 
     unknown_deps = storage.get_unknown_packages(
@@ -258,7 +261,7 @@ def edit_package_version(
     session.commit()
 
 
-@app.delete("/package/{package}/version/{version}")
+@router.delete("/package/{package}/version/{version}")
 def delete_package_version(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -279,7 +282,7 @@ def delete_package_version(
     session.commit()
 
 
-@app.get("/package/{package}/tag")
+@router.get("/package/{package}/tag")
 def get_package_tags(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -287,7 +290,7 @@ def get_package_tags(
     return storage.get_package_tags(session, package_id)
 
 
-@app.post("/package/{package}/tag", status_code=status.HTTP_201_CREATED)
+@router.post("/package/{package}/tag", status_code=status.HTTP_201_CREATED)
 def create_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -306,7 +309,7 @@ def create_package_tag(
     session.commit()
 
 
-@app.get("/package/{package}/tag/{tag}")
+@router.get("/package/{package}/tag/{tag}")
 def get_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -320,7 +323,7 @@ def get_package_tag(
     return result
 
 
-@app.post("/package/{package}/tag/{tag}")
+@router.post("/package/{package}/tag/{tag}")
 def edit_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -346,7 +349,7 @@ def edit_package_tag(
     session.commit()
 
 
-@app.delete("/package/{package}/tag/{tag}")
+@router.delete("/package/{package}/tag/{tag}")
 def delete_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],

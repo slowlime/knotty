@@ -1,8 +1,6 @@
 from collections.abc import Iterable
 from typing import Sequence
-from typing_extensions import assert_never
-from sqlalchemy import select
-from sqlalchemy import orm
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import (
     Session,
@@ -17,7 +15,7 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.sql.base import ExecutableOption
 
-from knotty import config
+from knotty.config import config
 
 from . import model, schema
 
@@ -40,7 +38,7 @@ def get_user(session: Session, username: str) -> schema.FullUserInfo | None:
 
     return schema.FullUserInfo(
         username=user.username,
-        email=user.email,
+        email=user.email,  # type: ignore
         registered=user.registered,
         namespaces=get_user_namespaces(session, username),
         id=user.id,
@@ -87,7 +85,7 @@ def get_user_namespaces(session: Session, username: str) -> list[str]:
     return list(
         session.scalars(
             select(model.Namespace.namespace)
-            .join_from(model.User, model.User.namespace_members)
+            .join_from(model.User, model.User.namespace_memberships)
             .where(model.User.username == username)
             .join(model.NamespaceUser.namespace)
         ).all()
@@ -117,7 +115,7 @@ def get_namespace(session: Session, name: str) -> schema.Namespace | None:
     return schema.Namespace(
         name=namespace.namespace,
         description=namespace.description,
-        homepage=namespace.homepage,
+        homepage=namespace.homepage,  # type: ignore
         created_date=namespace.created_date,
         users=users,
         roles=roles,
@@ -342,7 +340,7 @@ def get_namespace_user_permissions(
 ) -> list[model.PermissionCode]:
     query = (
         select(model.Permission.code)
-        .join_from(model.User, model.User.namespace_members)
+        .join_from(model.User, model.User.namespace_memberships)
         .where(model.User.username == username)
         .join(model.NamespaceUser.namespace)
         .where(model.Namespace.namespace == namespace)
@@ -610,17 +608,17 @@ def get_packages(session: Session) -> list[schema.PackageBrief]:
 
 def to_package_version(version: model.PackageVersion) -> schema.PackageVersion:
     return schema.PackageVersion(
-        version=version.version,
+        version=schema.Version.parse(version.version),
         downloads=version.downloads,
         created_date=version.created_date,
         created_by=version.created_by.username,
         description=version.description,
-        repository=version.repository,
-        tarball=version.tarball,
+        repository=version.repository,  # type: ignore
+        tarball=version.tarball,  # type: ignore
         checksums=[
             schema.PackageChecksum(
                 algorithm=checksum.algorithm,
-                value=checksum.value.hex(),
+                value=checksum.value.hex(),  # type: ignore
             )
             for checksum in version.checksums
         ],
@@ -828,6 +826,9 @@ def edit_package(
     pkg_model.owners.clear()
     pkg_model.owners.extend(owners)
 
+    session.flush()
+    purge_garbage_labels(session)
+
 
 def delete_package(session: Session, package: str):
     pkg_model = get_package_model(session, package)
@@ -960,7 +961,7 @@ def edit_package_version(
     version_model = get_package_version_model(session, package_id, version)
     assert version_model is not None
 
-    version_model.version = data.version
+    version_model.version = str(data.version)
     version_model.description = data.description
     version_model.repository = data.repository
     version_model.tarball = data.tarball
@@ -1112,3 +1113,14 @@ def get_or_create_labels(
         .returning(model.Label),
         [{"name": label} for label in labels],
     ).all()
+
+
+def purge_garbage_labels(session: Session):
+    session.execute(
+        delete(model.Label)
+        .where(model.Label.id.in_(
+            select(model.Label.id)
+            .join(model.Label.packages, isouter=True)
+            .where(model.Package.id == None)
+        ))
+    )

@@ -11,13 +11,17 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+import sqlalchemy
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
-    column_property,
     mapped_column,
     relationship,
 )
+
+
+def get_enum_values(enum) -> list[str]:
+    return [member.value for member in enum]
 
 
 class Base(DeclarativeBase):
@@ -46,10 +50,17 @@ class User(Base):
     email: Mapped[str] = mapped_column(unique=True)
     pwhash: Mapped[str]
     registered: Mapped[datetime]
-    role: Mapped[UserRole]
+    role: Mapped[UserRole] = mapped_column(
+        sqlalchemy.Enum(
+            UserRole,
+            create_constraint=True,
+            native_enum=False,
+            values_callable=get_enum_values,
+        )
+    )
 
-    namespace_members: Mapped[List["NamespaceUser"]] = relationship(
-        back_populates="user"
+    namespace_memberships: Mapped[List["NamespaceUser"]] = relationship(
+        back_populates="user", foreign_keys=lambda: NamespaceUser.user_id
     )
     packages: Mapped[List["Package"]] = relationship(
         secondary=lambda: package_owner_table,
@@ -58,7 +69,7 @@ class User(Base):
 
 
 class Namespace(Base):
-    __tablename__ = "namespace"
+    __tablename__ = "namespaces"
 
     id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     namespace: Mapped[str] = mapped_column(unique=True)
@@ -92,7 +103,7 @@ class NamespaceUser(Base):
     updated_by_user_id: Mapped[int] = mapped_column(ForeignKey(User.id))
 
     user: Mapped[User] = relationship(
-        back_populates="namespace_members", foreign_keys=user_id
+        back_populates="namespace_memberships", foreign_keys=user_id
     )
     namespace: Mapped[Namespace] = relationship(back_populates="users")
     role: Mapped["NamespaceRole"] = relationship(back_populates="users")
@@ -150,7 +161,15 @@ class Permission(Base):
     __tablename__ = "permissions"
 
     id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
-    code: Mapped[PermissionCode] = mapped_column(unique=True)
+    code: Mapped[PermissionCode] = mapped_column(
+        sqlalchemy.Enum(
+            PermissionCode,
+            create_constraint=True,
+            native_enum=False,
+            values_callable=get_enum_values,
+        ),
+        unique=True,
+    )
     description: Mapped[str]
 
 
@@ -200,7 +219,6 @@ class Package(Base):
     updated_by: Mapped[User] = relationship(foreign_keys=updated_by_user_id)
     labels: Mapped[List["Label"]] = relationship(
         back_populates="packages",
-        cascade="all, delete-orphan",
         passive_deletes=True,
         secondary=package_label_table,
     )
@@ -280,7 +298,15 @@ class PackageVersionChecksum(Base):
         ForeignKey(PackageVersion.id, ondelete="CASCADE", onupdate="CASCADE"),
         primary_key=True,
     )
-    algorithm: Mapped[ChecksumAlgorithm] = mapped_column(primary_key=True)
+    algorithm: Mapped[ChecksumAlgorithm] = mapped_column(
+        sqlalchemy.Enum(
+            ChecksumAlgorithm,
+            create_constraint=True,
+            native_enum=False,
+            values_callable=get_enum_values,
+        ),
+        primary_key=True,
+    )
     value: Mapped[bytes]
 
     version: Mapped[PackageVersion] = relationship(back_populates="checksums")
@@ -321,4 +347,6 @@ class Label(Base):
     id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
 
-    packages: Mapped[List[Package]] = relationship(back_populates="labels")
+    packages: Mapped[List[Package]] = relationship(
+        back_populates="labels", secondary=package_label_table
+    )
