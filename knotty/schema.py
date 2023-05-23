@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+import logging
 from typing import Annotated
 
 import semver
@@ -38,6 +39,8 @@ PackageTagName = Annotated[
     str, Field(min_length=1, max_length=32, regex=PACKAGE_TAG_REGEX)
 ]
 
+logger = logging.getLogger(__name__)
+
 
 class ChecksumValue(ConstrainedStr):
     to_lower = True
@@ -47,6 +50,13 @@ class ChecksumValue(ConstrainedStr):
 class Version(semver.version.Version):
     @classmethod
     def _parse(cls, version):
+        if isinstance(version, Version):
+            return version
+
+        if isinstance(version, semver.version.Version):
+            # i'm sorry
+            return cls._parse(str(version))
+
         return cls.parse(version)
 
     @classmethod
@@ -58,7 +68,12 @@ class Version(semver.version.Version):
         field_schema.update(examples=["1.0.2", "2.15.3-alpha", "21.3.15-beta+12345"])
 
 
-class WithId(BaseModel):
+class BaseKnottyModel(BaseModel):
+    class Config:
+        json_encoders = {Version: str}
+
+
+class WithId(BaseKnottyModel):
     id: int
 
 
@@ -68,7 +83,7 @@ class UserRegistered(Enum):
     email_registered = 2
 
 
-class UserInfo(BaseModel):
+class UserInfo(BaseKnottyModel):
     username: Username
     email: EmailStr
     registered: datetime
@@ -79,12 +94,12 @@ class FullUserInfo(UserInfo, WithId):
     role: model.UserRole
 
 
-class AuthToken(BaseModel):
+class AuthToken(BaseKnottyModel):
     token_type: str = "bearer"
     access_token: str
 
 
-class UserRegister(BaseModel):
+class UserRegister(BaseKnottyModel):
     username: Username
     email: EmailStr
     password: Annotated[str, Field(max_length=1024)]
@@ -97,14 +112,14 @@ class UserRegister(BaseModel):
         return v
 
 
-class UserCreate(BaseModel):
+class UserCreate(BaseKnottyModel):
     username: str
     email: str
     pwhash: str
     registered: datetime
 
 
-class NamespaceBase(BaseModel):
+class NamespaceBase(BaseKnottyModel):
     name: NamespaceName
     description: Annotated[str, Field(max_length=131072)]
     homepage: Annotated[AnyHttpUrl, Field(max_length=2048)] | None
@@ -124,7 +139,7 @@ class Namespace(NamespaceBase):
     roles: list["NamespaceRole"]
 
 
-class NamespaceUserBase(BaseModel):
+class NamespaceUserBase(BaseKnottyModel):
     username: str
     role: str
 
@@ -140,11 +155,11 @@ class NamespaceUserCreate(NamespaceUserBase):
     pass
 
 
-class NamespaceUserEdit(BaseModel):
+class NamespaceUserEdit(BaseKnottyModel):
     role: str
 
 
-class NamespaceRoleBase(BaseModel):
+class NamespaceRoleBase(BaseKnottyModel):
     name: NamespaceRoleName
     permissions: list[model.PermissionCode]
 
@@ -164,7 +179,7 @@ class NamespaceRoleEdit(NamespaceRoleBase):
     pass
 
 
-class PackageBasic(BaseModel):
+class PackageBasic(BaseKnottyModel):
     name: PackageName
     summary: Annotated[str, Field(max_length=256)]
 
@@ -222,14 +237,20 @@ class PackageCreate(PackageBasic):
 
         return v
 
-    @validator("tags", each_item=True)
+    @validator("tags")
     def tags_must_refer_to_valid_versions(
         cls,
-        v: "PackageTag",
+        v: list["PackageTag"],
         values: dict,
-    ) -> "PackageTag":
-        if not any(v.version == version.version for version in values["version"]):
-            raise ValueError("tag does not refer to valid version")
+    ) -> list["PackageTag"]:
+        if "versions" not in values:
+            return v
+
+        for tag in v:
+            if not any(
+                tag.version == version.version for version in values["versions"]
+            ):
+                raise ValueError(f"tag {tag.name} does not refer to valid version")
 
         return v
 
@@ -240,7 +261,7 @@ class PackageEdit(PackageBasic):
     owners: set[str]
 
 
-class PackageVersionBase(BaseModel):
+class PackageVersionBase(BaseKnottyModel):
     version: Version
     description: Annotated[str, Field(max_length=131072)]
     repository: Annotated[AnyUrl, Field(max_length=2048)] | None
@@ -297,7 +318,7 @@ class PackageVersionEdit(PackageVersionBase):
     pass
 
 
-class PackageChecksum(BaseModel):
+class PackageChecksum(BaseKnottyModel):
     algorithm: model.ChecksumAlgorithm
     value: ChecksumValue
 
@@ -305,23 +326,23 @@ class PackageChecksum(BaseModel):
     def length_must_be_valid(cls, v, values):
         expected_len = values["algorithm"].length
 
-        if len(v) != expected_len:
+        if len(v) != expected_len * 2:
             raise ValueError(f"invalid length: expected {expected_len} bytes")
 
         return v
 
 
-class PackageDependency(BaseModel):
+class PackageDependency(BaseKnottyModel):
     package: str
     spec: PackageDependencySpec
 
 
-class PackageTag(BaseModel):
+class PackageTag(BaseKnottyModel):
     name: PackageTagName
     version: str
 
 
-class Permission(BaseModel):
+class Permission(BaseKnottyModel):
     code: model.PermissionCode
     description: str
 

@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -8,6 +9,7 @@ from ..db import SessionDep
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def can_edit_owners(
@@ -162,6 +164,9 @@ def edit_package(
 
     if unknown_owners:
         raise error.unknown_owners(unknown_owners)
+
+    if body.owners:
+        raise error.no_owner_remains()
 
     storage.edit_package(session, package, body, updated_by=auth)
     session.commit()

@@ -1,5 +1,7 @@
 from collections.abc import Iterable
+import logging
 from typing import Sequence
+from pydantic import validate_model
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import (
@@ -18,6 +20,9 @@ from sqlalchemy.sql.base import ExecutableOption
 from knotty.config import config
 
 from . import model, schema
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_user_model(session: Session, username: str) -> model.User | None:
@@ -93,7 +98,7 @@ def get_user_namespaces(session: Session, username: str) -> list[str]:
 
 
 def create_user(session: Session, data: schema.UserCreate):
-    user = model.User(**data.dict())
+    user = model.User(role=model.UserRole.regular, **data.dict())
     session.add(user)
 
 
@@ -608,7 +613,7 @@ def get_packages(session: Session) -> list[schema.PackageBrief]:
 
 def to_package_version(version: model.PackageVersion) -> schema.PackageVersion:
     return schema.PackageVersion(
-        version=schema.Version.parse(version.version),
+        version=version.version,  # type: ignore
         downloads=version.downloads,
         created_date=version.created_date,
         created_by=version.created_by.username,
@@ -667,6 +672,9 @@ def get_package(session: Session, name: str) -> schema.Package | None:
             selectinload(model.Package.tags)
             .joinedload(model.PackageTag.package)
             .load_only(model.Package.name),
+            selectinload(model.Package.tags)
+            .joinedload(model.PackageTag.version)
+            .load_only(model.PackageVersion.version),
             raiseload("*"),
         )
     )
@@ -734,7 +742,7 @@ def make_package_version_model(
     created_by: model.User,
 ) -> model.PackageVersion:
     return model.PackageVersion(
-        version=data.version,
+        version=str(data.version),
         created_by=created_by,
         description=data.description,
         repository=data.repository,
@@ -1089,9 +1097,7 @@ def edit_package_tag(
     tag_model.version = version
 
 
-def delete_package_tag(
-    session: Session, package_id: int, tag: str
-):
+def delete_package_tag(session: Session, package_id: int, tag: str):
     tag_model = get_package_tag_model(session, package_id, tag)
     assert tag_model is not None
 
@@ -1109,7 +1115,7 @@ def get_or_create_labels(
 ) -> Sequence[model.Label]:
     return session.scalars(
         insert(model.Label)
-        .on_conflict_do_nothing(index_elements=model.Label.name)
+        .on_conflict_do_nothing(index_elements=[model.Label.name])
         .returning(model.Label),
         [{"name": label} for label in labels],
     ).all()
@@ -1117,10 +1123,11 @@ def get_or_create_labels(
 
 def purge_garbage_labels(session: Session):
     session.execute(
-        delete(model.Label)
-        .where(model.Label.id.in_(
-            select(model.Label.id)
-            .join(model.Label.packages, isouter=True)
-            .where(model.Package.id == None)
-        ))
+        delete(model.Label).where(
+            model.Label.id.in_(
+                select(model.Label.id)
+                .join(model.Label.packages, isouter=True)
+                .where(model.Package.id == None)
+            )
+        )
     )

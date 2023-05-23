@@ -129,7 +129,10 @@ def check_namespace_edit(
 def can_create_package(
     user_role_check: Annotated[bool | None, Depends(check_user_role)],
 ) -> bool:
-    return bool(user_role_check)
+    if user_role_check is not None:
+        return user_role_check
+
+    return True
 
 
 def is_package_owner(

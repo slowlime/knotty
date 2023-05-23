@@ -1,9 +1,15 @@
+import logging.config
+
 from fastapi import FastAPI
 
+from knotty.config import config
 import knotty.route.namespace
 import knotty.route.package
 import knotty.route.permission
 import knotty.route.user
+
+
+logging.config.dictConfig(config.logging)
 
 app = FastAPI()
 app.include_router(knotty.route.namespace.router)

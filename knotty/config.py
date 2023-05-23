@@ -20,6 +20,7 @@ class Config(BaseModel):
     token_expiry: timedelta = timedelta(hours=2)
 
     default_names: "DefaultNamesConfig"
+    logging: dict[str, Any] = {}
 
     @staticmethod
     def load_from_toml(path: Path) -> "Config":

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from logging import getLogger
 from typing import Annotated
 
 from fastapi import Depends
@@ -17,6 +18,7 @@ JWT_ALGORITHM = "HS256"
 
 pwd_context = CryptContext(schemes=["argon2"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+logger = getLogger(__name__)
 
 
 class JwtTokenData(BaseModel):
@@ -68,17 +70,27 @@ def get_current_user(
         payload = jwt.decode(
             token, config.secret_key.get_secret_value(), algorithms=[JWT_ALGORITHM]
         )
-        username: str | None = payload.get("sub")
+        sub: str | None = payload.get("sub")
 
-        if username is None:
+        if sub is None:
+            logger.error("Received a valid JWT without sub field! Payload: %s", payload)
+
             raise unauthorized()
+
+        username = sub[len("username:"):]
     except JWTError:
+        logger.info("Received an invalid JWT", exc_info=True)
+
         raise unauthorized()
 
     user = storage.get_user_model(session, username)
 
     if user is None:
+        logger.error("Received a valid JWT for invalid user %s!", sub)
+
         raise unauthorized()
+
+    logger.debug("Username %s has been authenticated", user.username)
 
     return user
 
