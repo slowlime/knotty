@@ -165,7 +165,7 @@ def edit_package(
     if unknown_owners:
         raise error.unknown_owners(unknown_owners)
 
-    if body.owners:
+    if not body.owners:
         raise error.no_owner_remains()
 
     storage.edit_package(session, package, body, updated_by=auth)

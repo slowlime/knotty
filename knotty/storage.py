@@ -1,9 +1,9 @@
-from collections.abc import Iterable
+from collections.abc import Sequence, Collection
 import logging
-from typing import Sequence
-from pydantic import validate_model
+from typing import Any, Callable
 from sqlalchemy import delete, select
-from sqlalchemy.dialects.postgresql import insert
+import sqlalchemy.dialects.postgresql
+import sqlalchemy.dialects.sqlite
 from sqlalchemy.orm import (
     Session,
     aliased,
@@ -17,7 +17,7 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.sql.base import ExecutableOption
 
-from knotty.config import config
+from knotty.config import Config
 
 from . import model, schema
 
@@ -137,9 +137,11 @@ def get_namespace_exists(session: Session, name: str) -> bool:
     return get_namespace_id(session, name) is not None
 
 
-def create_namespace(session: Session, data: schema.NamespaceCreate, owner: model.User):
+def create_namespace(
+    session: Session, data: schema.NamespaceCreate, owner: model.User, config: Config
+):
     namespace = model.Namespace(
-        name=data.name,
+        namespace=data.name,
         description=data.description,
         homepage=data.homepage,
     )
@@ -214,11 +216,11 @@ def get_namespace_users(session: Session, name: str) -> list[schema.NamespaceUse
         for user in session.execute(
             select(
                 username_alias.username.label("username"),
+                model.NamespaceRole.name.label("role"),
                 model.NamespaceUser.added_date,
                 added_by_alias.username.label("added_by"),
                 model.NamespaceUser.updated_date,
                 updated_by_alias.username.label("updated_by"),
-                model.NamespaceRole.name,
             )
             .join(model.NamespaceUser.namespace)
             .where(model.Namespace.namespace == name)
@@ -244,14 +246,6 @@ def get_namespace_roles(session: Session, name: str) -> list[schema.NamespaceRol
             ),
             selectinload(model.NamespaceRole.permissions).load_only(
                 model.Permission.code, raiseload=True
-            ),
-            load_only(
-                model.NamespaceRole.name,
-                model.NamespaceRole.created_date,
-                model.NamespaceRole.created_by,
-                model.NamespaceRole.updated_date,
-                model.NamespaceRole.updated_by,
-                model.NamespaceRole.permissions,
             ),
             raiseload("*"),
         )
@@ -298,6 +292,7 @@ def get_namespace_user(
             selectinload(model.NamespaceUser.user).load_only(model.User.username),
             selectinload(model.NamespaceUser.added_by).load_only(model.User.username),
             selectinload(model.NamespaceUser.updated_by).load_only(model.User.username),
+            joinedload(model.NamespaceUser.role).load_only(model.NamespaceRole.name),
             raiseload("*"),
         )
     )
@@ -311,7 +306,7 @@ def get_namespace_user(
         added_by=user.added_by.username,
         updated_date=user.updated_date,
         updated_by=user.updated_by.username,
-        role=str(user.role),
+        role=user.role.name,
     )
 
 
@@ -427,11 +422,11 @@ def get_namespace_role(
         .options(
             contains_eager(
                 model.NamespaceRole.created_by.of_type(created_by_alias)
-            ).load_only(model.User.username, raiseload=True),
+            ).load_only(created_by_alias.username, raiseload=True),
             contains_eager(
                 model.NamespaceRole.updated_by.of_type(updated_by_alias)
-            ).load_only(model.User.username, raiseload=True),
-            undefer(model.NamespaceRole.permissions).load_only(
+            ).load_only(updated_by_alias.username, raiseload=True),
+            selectinload(model.NamespaceRole.permissions).load_only(
                 model.Permission.code, raiseload=True
             ),
         )
@@ -1053,12 +1048,12 @@ def get_package_tag_exists(session: Session, package_id: int, tag: str) -> bool:
 def get_package_tag(
     session: Session, package_id: int, tag: str
 ) -> schema.PackageTag | None:
-    result = session.scalar(
+    result = session.execute(
         select(model.PackageTag.name, model.PackageVersion.version)
         .select_from(model.PackageTag)
         .filter_by(package_id=package_id, name=tag)
         .join(model.PackageTag.version)
-    )
+    ).one_or_none()
 
     if result is None:
         return None
@@ -1110,14 +1105,53 @@ def get_permissions(session: Session) -> list[model.Permission]:
     return list(session.scalars(query).all())
 
 
+def insert_permissions(session: Session):
+    stmt = make_insert(session)(model.Permission)
+    session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[model.Permission.code],
+            set_={
+                "description": stmt.excluded.description,
+            }
+        ),
+        [
+            {"code": code, "description": code.description}
+            for code in model.PermissionCode
+        ],
+    )
+
+
+def make_insert(
+    session: Session,
+) -> (
+    Callable[[Any], sqlalchemy.dialects.postgresql.Insert]
+    | Callable[[Any], sqlalchemy.dialects.sqlite.Insert]
+):
+    match session.get_bind().dialect.name:
+        case "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+
+        case "sqlite":
+            from sqlalchemy.dialects.sqlite import insert
+
+        case dialect:
+            raise NotImplementedError(f"unsupported dialect {dialect}")
+
+    return insert
+
+
 def get_or_create_labels(
-    session: Session, labels: Iterable[str]
+    session: Session, labels: Collection[str]
 ) -> Sequence[model.Label]:
-    return session.scalars(
-        insert(model.Label)
-        .on_conflict_do_nothing(index_elements=[model.Label.name])
-        .returning(model.Label),
+    session.execute(
+        make_insert(session)(model.Label).on_conflict_do_nothing(
+            index_elements=[model.Label.name]
+        ),
         [{"name": label} for label in labels],
+    )
+
+    return session.scalars(
+        select(model.Label).where(model.Label.name.in_(labels))
     ).all()
 
 

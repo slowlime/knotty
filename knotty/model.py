@@ -150,11 +150,35 @@ namespace_role_permission_table = Table(
 
 
 class PermissionCode(Enum):
-    namespace_owner = "namespace-owner"
-    namespace_admin = "namespace-admin"
-    namespace_edit = "namespace-edit"
-    package_create = "package-create"
-    package_edit = "package-edit"
+    description: str
+
+    namespace_owner = (
+        "namespace-owner",
+        "Namespace owner (can do anything to the namespace, including deleting it)",
+    )
+    namespace_admin = (
+        "namespace-admin",
+        "Namespace administrator (can manage namespace users and roles)",
+    )
+    namespace_edit = (
+        "namespace-edit",
+        "Namespace editor (can edit namespace info and its packages)",
+    )
+    package_create = (
+        "package-create",
+        "A permission to create packages in the namespace",
+    )
+    package_edit = (
+        "package-edit",
+        "A permission to edit already existing packages in the namespace",
+    )
+
+    def __new__(cls, name: str, description: str):
+        obj = object.__new__(cls)
+        obj._value_ = name
+        obj.description = description  # type: ignore
+
+        return obj
 
 
 class Permission(Base):

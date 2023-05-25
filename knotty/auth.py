@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import model, storage
-from .config import config
+from .config import Config, ConfigDep
 from .db import SessionDep
 from .error import unauthorized
 
@@ -53,7 +53,7 @@ def auth_user(session: Session, username: str, password: str) -> model.User | No
     return user
 
 
-def create_token(data: JwtTokenData, expires_in: timedelta) -> str:
+def create_token(data: JwtTokenData, expires_in: timedelta, config: Config) -> str:
     expiration = datetime.utcnow() + expires_in
     data = ExpireableJwtTokenData(exp=expiration, **data.dict())
     encoded = jwt.encode(
@@ -64,7 +64,8 @@ def create_token(data: JwtTokenData, expires_in: timedelta) -> str:
 
 
 def get_current_user(
-    session: SessionDep, token: Annotated[str, Depends(oauth2_scheme)]
+    session: SessionDep, token: Annotated[str, Depends(oauth2_scheme)],
+    config: ConfigDep,
 ) -> model.User:
     try:
         payload = jwt.decode(

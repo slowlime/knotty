@@ -1,11 +1,14 @@
 from datetime import timedelta
+from functools import cache
+import logging
 import os
 
 from pathlib import Path
+from fastapi import Depends
 
 import toml
 
-from typing import Any
+from typing import Annotated, Any
 from pydantic import BaseModel, SecretStr
 
 
@@ -17,6 +20,7 @@ class Config(BaseModel):
     secret_key: SecretStr
     db_url: str
     connect_args: dict[str, Any] = {}
+    use_static_pool: bool = False
     token_expiry: timedelta = timedelta(hours=2)
 
     default_names: "DefaultNamesConfig"
@@ -24,11 +28,15 @@ class Config(BaseModel):
 
     @staticmethod
     def load_from_toml(path: Path) -> "Config":
-        Config.update_forward_refs()
-
         parsed = toml.load(path)
 
         return Config(**parsed)
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __eq__(self, other):
+        return id(self) == id(other)
 
 
 class DefaultNamesConfig(BaseModel):
@@ -41,4 +49,11 @@ def load_config() -> Config:
     return Config.load_from_toml(Path(path))
 
 
-config = load_config()
+@cache
+def get_config() -> Config:
+    logging.debug("loading a config")
+    return load_config()
+
+
+Config.update_forward_refs()
+ConfigDep = Annotated[Config, Depends(get_config)]

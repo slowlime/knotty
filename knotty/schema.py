@@ -143,6 +143,9 @@ class NamespaceUserBase(BaseKnottyModel):
     username: str
     role: str
 
+    class Config:
+        orm_mode = True
+
 
 class NamespaceUser(NamespaceUserBase):
     added_date: datetime
@@ -202,8 +205,8 @@ class Package(PackageBrief):
 
 class PackageCreate(PackageBasic):
     namespace: str | None
-    labels: set[PackageLabel]
-    owners: set[str]
+    labels: set[PackageLabel] = set()
+    owners: set[str] = set()
     versions: list["PackageVersionCreate"]
     tags: list["PackageTag"]
 

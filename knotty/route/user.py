@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from knotty.config import config
+from knotty.config import ConfigDep
 from .. import acl, error, schema, storage
 from ..auth import JwtTokenData, auth_user, create_token, hash_password
 from ..db import SessionDep
@@ -42,7 +42,9 @@ def get_user(
 
 @router.post("/login")
 def login(
-    session: SessionDep, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
+    config: ConfigDep,
+    session: SessionDep,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> schema.AuthToken:
     user = auth_user(session, form_data.username, form_data.password)
 
@@ -50,7 +52,7 @@ def login(
         raise error.invalid_credentials()
 
     token = create_token(
-        JwtTokenData.for_username(form_data.username), config.token_expiry
+        JwtTokenData.for_username(form_data.username), config.token_expiry, config
     )
 
     return schema.AuthToken(access_token=token)

@@ -90,7 +90,10 @@ def has_namespace_permissions(
 def can_add_namespace(
     user_role_check: Annotated[bool | None, Depends(check_user_role)],
 ) -> bool:
-    return bool(user_role_check)
+    if user_role_check is not None:
+        return user_role_check
+
+    return True
 
 
 def check_namespace_owner(

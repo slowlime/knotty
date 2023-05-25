@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, status
 
 from knotty import acl, model
 from knotty.auth import AuthDep
+from knotty.config import ConfigDep
 from .. import error, schema, storage
 from ..db import SessionDep
 
@@ -21,6 +22,7 @@ def check_namespace_exists(session: SessionDep, namespace: str) -> int:
 
 @router.post("/namespace", status_code=status.HTTP_201_CREATED)
 def create_namespace(
+    config: ConfigDep,
     session: SessionDep,
     body: schema.NamespaceCreate,
     auth: AuthDep,
@@ -31,7 +33,7 @@ def create_namespace(
     if storage.get_namespace_exists(session, body.name):
         raise error.already_exists("Namespace")
 
-    storage.create_namespace(session, body, auth)
+    storage.create_namespace(session, body, auth, config)
     session.commit()
 
 
@@ -238,7 +240,7 @@ def get_namespace_roles(
     return storage.get_namespace_roles(session, namespace)
 
 
-@router.post("/namespace/{namespace}/role")
+@router.post("/namespace/{namespace}/role", status_code=status.HTTP_201_CREATED)
 def create_namespace_role(
     session: SessionDep,
     auth: AuthDep,
