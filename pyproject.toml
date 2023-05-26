@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "knot"
+version = "0.1.0"
+description = ""
+authors = ["slowlime"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+typer = { extras = ["all"], version = "^0.9.0" }
+knotty-client = { path = "./knotty-client/", develop = true }
+pydantic = "^1.10.8"
+toml = "^0.10.2"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.3.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
