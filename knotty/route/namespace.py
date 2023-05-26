@@ -1,11 +1,18 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
-from knotty import acl, model
+from knotty import acl, model, schema, storage
 from knotty.auth import AuthDep
 from knotty.config import ConfigDep
-from .. import error, schema, storage
-from ..db import SessionDep
+from knotty.db import SessionDep
+from knotty.error import (
+    AlreadyExistsException,
+    NoNamespaceOwnerRemainsException,
+    NoPermissionException,
+    NotFoundException,
+    RoleNotEmptyException,
+    exception_responses,
+)
 
 
 router = APIRouter()
@@ -15,12 +22,16 @@ def check_namespace_exists(session: SessionDep, namespace: str) -> int:
     namespace_id = storage.get_namespace_id(session, namespace)
 
     if namespace_id is None:
-        raise error.not_found("Namespace")
+        raise NotFoundException("Namespace")
 
     return namespace_id
 
 
-@router.post("/namespace", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/namespace",
+    status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(AlreadyExistsException),
+)
 def create_namespace(
     config: ConfigDep,
     session: SessionDep,
@@ -31,18 +42,18 @@ def create_namespace(
     acl.require(namespace_create_check)
 
     if storage.get_namespace_exists(session, body.name):
-        raise error.already_exists("Namespace")
+        raise AlreadyExistsException("Namespace")
 
     storage.create_namespace(session, body, auth, config)
     session.commit()
 
 
-@router.get("/namespace/{namespace}")
+@router.get("/namespace/{namespace}", responses=exception_responses(NotFoundException))
 def get_namespace(session: SessionDep, namespace: str) -> schema.Namespace:
     ns = storage.get_namespace(session, namespace)
 
     if ns is None:
-        raise error.not_found("Namespace")
+        raise NotFoundException("Namespace")
 
     return ns
 
@@ -50,6 +61,9 @@ def get_namespace(session: SessionDep, namespace: str) -> schema.Namespace:
 @router.post(
     "/namespace/{namespace}",
     dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, AlreadyExistsException
+    ),
 )
 def edit_namespace(
     session: SessionDep,
@@ -64,7 +78,7 @@ def edit_namespace(
         acl.require(namespace_admin_check)
 
         if storage.get_namespace_exists(session, body.name):
-            raise error.already_exists("Namespace")
+            raise AlreadyExistsException("Namespace")
 
     storage.edit_namespace(session, namespace, body)
     session.commit()
@@ -73,6 +87,7 @@ def edit_namespace(
 @router.delete(
     "/namespace/{namespace}",
     dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(NotFoundException, NoPermissionException),
 )
 def delete_namespace(
     session: SessionDep,
@@ -86,7 +101,9 @@ def delete_namespace(
 
 
 @router.get(
-    "/namespace/{namespace}/package", dependencies=[Depends(check_namespace_exists)]
+    "/namespace/{namespace}/package",
+    dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(NotFoundException),
 )
 def get_namespace_packages(
     session: SessionDep, namespace: str
@@ -95,7 +112,9 @@ def get_namespace_packages(
 
 
 @router.get(
-    "/namespace/{namespace}/user", dependencies=[Depends(check_namespace_exists)]
+    "/namespace/{namespace}/user",
+    dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(NotFoundException),
 )
 def get_namespace_users(
     session: SessionDep,
@@ -107,6 +126,9 @@ def get_namespace_users(
 @router.post(
     "/namespace/{namespace}/user",
     status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, AlreadyExistsException
+    ),
 )
 def create_namespace_user(
     session: SessionDep,
@@ -121,28 +143,32 @@ def create_namespace_user(
     acl.require(namespace_admin_check)
 
     if not storage.get_user_exists(session, body.username):
-        raise error.not_found("User")
+        raise NotFoundException("User")
 
     if storage.get_namespace_user_exists(session, namespace_id, body.username):
-        raise error.already_exists("User")
+        raise AlreadyExistsException("User")
 
     role_permissions = storage.get_namespace_role_permissions(
         session, namespace, body.role
     )
 
     if role_permissions is None:
-        raise error.not_found("Role")
+        raise NotFoundException("Role")
 
     if not is_admin and not acl.has_namespace_permissions(
         user_namespace_permissions, role_permissions
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     storage.create_namespace_user(session, namespace_id, body, added_by=auth)
     session.commit()
 
 
-@router.get("/namespace/{namespace}/user/{username}")
+@router.get(
+    "/namespace/{namespace}/user/{username}",
+    dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(NotFoundException),
+)
 def get_namespace_user(
     session: SessionDep,
     namespace: str,
@@ -151,12 +177,17 @@ def get_namespace_user(
     user = storage.get_namespace_user(session, namespace, username)
 
     if user is None:
-        raise error.not_found()
+        raise NotFoundException("User")
 
     return user
 
 
-@router.post("/namespace/{namespace}/user/{username}")
+@router.post(
+    "/namespace/{namespace}/user/{username}",
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, NoNamespaceOwnerRemainsException
+    ),
+)
 def edit_namespace_user(
     session: SessionDep,
     auth: AuthDep,
@@ -171,19 +202,19 @@ def edit_namespace_user(
     acl.require(namespace_admin_check)
 
     if not storage.get_namespace_user_exists(session, namespace_id, username):
-        raise error.not_found("User")
+        raise NotFoundException("User")
 
     role_permissions = storage.get_namespace_role_permissions(
         session, namespace, body.role
     )
 
     if role_permissions is None:
-        raise error.not_found("Role")
+        raise NotFoundException("Role")
 
     if not is_admin and not acl.has_namespace_permissions(
         user_namespace_permissions, role_permissions
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     owners = storage.get_namespace_owners(session, namespace_id)
 
@@ -192,13 +223,18 @@ def edit_namespace_user(
         and model.PermissionCode.namespace_owner not in role_permissions
         and len(owners) <= 1
     ):
-        raise error.no_owner_remains()
+        raise NoNamespaceOwnerRemainsException()
 
     storage.edit_namespace_user(session, namespace_id, username, body, updated_by=auth)
     session.commit()
 
 
-@router.delete("/namespace/{namespace}/user/{username}")
+@router.delete(
+    "/namespace/{namespace}/user/{username}",
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, NoNamespaceOwnerRemainsException
+    ),
+)
 def delete_namespace_user(
     session: SessionDep,
     auth: AuthDep,
@@ -219,19 +255,21 @@ def delete_namespace_user(
     if not is_admin and not acl.has_namespace_permissions(
         user_namespace_permissions, deleted_user_permissions
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     owners = storage.get_namespace_owners(session, namespace_id)
 
     if username in owners and len(owners) <= 1:
-        raise error.no_owner_remains()
+        raise NoNamespaceOwnerRemainsException()
 
     storage.delete_namespace_user(session, namespace_id, username)
     session.commit()
 
 
 @router.get(
-    "/namespace/{namespace}/role", dependencies=[Depends(check_namespace_exists)]
+    "/namespace/{namespace}/role",
+    dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(NotFoundException),
 )
 def get_namespace_roles(
     session: SessionDep,
@@ -240,7 +278,13 @@ def get_namespace_roles(
     return storage.get_namespace_roles(session, namespace)
 
 
-@router.post("/namespace/{namespace}/role", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/namespace/{namespace}/role",
+    status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, AlreadyExistsException
+    ),
+)
 def create_namespace_role(
     session: SessionDep,
     auth: AuthDep,
@@ -253,18 +297,22 @@ def create_namespace_role(
     acl.require(namespace_admin_check)
 
     if storage.get_namespace_role_exists(session, namespace_id, body.name):
-        raise error.already_exists("Role")
+        raise AlreadyExistsException("Role")
 
     if not is_admin and not acl.has_namespace_permissions(
         user_namespace_permissions, body.permissions
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     storage.create_namespace_role(session, namespace_id, body, created_by=auth)
     session.commit()
 
 
-@router.get("/namespace/{namespace}/role/{role}")
+@router.get(
+    "/namespace/{namespace}/role/{role}",
+    dependencies=[Depends(check_namespace_exists)],
+    responses=exception_responses(NotFoundException),
+)
 def get_namespace_role(
     session: SessionDep,
     namespace: str,
@@ -273,12 +321,20 @@ def get_namespace_role(
     result = storage.get_namespace_role(session, namespace, role)
 
     if result is None:
-        raise error.not_found()
+        raise NotFoundException("Role")
 
     return result
 
 
-@router.post("/namespace/{namespace}/role/{role}")
+@router.post(
+    "/namespace/{namespace}/role/{role}",
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+        AlreadyExistsException,
+        NoNamespaceOwnerRemainsException,
+    ),
+)
 def edit_namespace_role(
     session: SessionDep,
     auth: AuthDep,
@@ -293,17 +349,17 @@ def edit_namespace_role(
     acl.require(namespace_admin_check)
 
     if not storage.get_namespace_role_exists(session, namespace_id, role):
-        raise error.not_found("Role")
+        raise NotFoundException("Role")
 
     if role != body.name and storage.get_namespace_role_exists(
         session, namespace_id, body.name
     ):
-        raise error.already_exists("Role")
+        raise AlreadyExistsException("Role")
 
     if not is_admin and not acl.has_namespace_permissions(
         user_namespace_permissions, body.permissions
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     role_permissions = storage.get_namespace_role_permissions(session, namespace, role)
     assert role_permissions is not None
@@ -311,7 +367,7 @@ def edit_namespace_role(
     if not is_admin and not acl.has_namespace_permissions(
         user_namespace_permissions, role_permissions
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     if (
         model.PermissionCode.namespace_owner in role_permissions
@@ -322,13 +378,18 @@ def edit_namespace_role(
         assert affected_users is not None
 
         if not (set(owners) - set(affected_users)):
-            raise error.no_owner_remains()
+            raise NoNamespaceOwnerRemainsException()
 
     storage.edit_namespace_role(session, namespace_id, role, body, updated_by=auth)
     session.commit()
 
 
-@router.delete("/namespace/{namespace}/role/{role}")
+@router.delete(
+    "/namespace/{namespace}/role/{role}",
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, RoleNotEmptyException
+    ),
+)
 def delete_namespace_role(
     session: SessionDep,
     namespace: str,
@@ -341,7 +402,7 @@ def delete_namespace_role(
     acl.require(namespace_admin_check)
 
     if not storage.get_namespace_role_exists(session, namespace_id, role):
-        raise error.not_found("Role")
+        raise NotFoundException("Role")
 
     role_permissions = storage.get_namespace_role_permissions(session, namespace, role)
     assert role_permissions is not None
@@ -350,10 +411,10 @@ def delete_namespace_role(
         user_namespace_permissions,
         role_permissions,
     ):
-        raise error.no_permission()
+        raise NoPermissionException()
 
     if storage.get_namespace_role_empty(session, namespace_id, role):
-        raise error.role_not_empty()
+        raise RoleNotEmptyException()
 
     storage.delete_namespace_role(session, namespace_id, role)
     session.commit()

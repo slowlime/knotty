@@ -73,10 +73,13 @@ def test_create_namespace_user(auth_client: TestClient, namespace: dict):
         password="hello world",
     )
 
-    r = auth_client.post(f"/namespace/{namespace['name']}/user", json={
-        "username": "second-user",
-        "role": "owner",
-    })
+    r = auth_client.post(
+        f"/namespace/{namespace['name']}/user",
+        json={
+            "username": "second-user",
+            "role": "owner",
+        },
+    )
     assert r.status_code == 201
 
     user_data = {
@@ -95,9 +98,12 @@ def test_create_namespace_user(auth_client: TestClient, namespace: dict):
     namespace["users"].append(user_data)
     r = auth_client.get(f"/namespace/{namespace['name']}")
     assert r.status_code == 200
-    assert r.json() == to_fuzzy_dict(namespace, {
-        ("users",): "unordered",
-    })
+    assert r.json() == to_fuzzy_dict(
+        namespace,
+        {
+            ("users",): "unordered",
+        },
+    )
 
 
 def test_create_namespace_role(auth_client: TestClient, namespace: dict):
@@ -108,13 +114,16 @@ def test_create_namespace_role(auth_client: TestClient, namespace: dict):
         password="hello world",
     )
 
-    r = auth_client.post(f"/namespace/{namespace['name']}/role", json={
-        "name": "second-user-role",
-        "permissions": [
-            "package-create",
-            "package-edit",
-        ],
-    })
+    r = auth_client.post(
+        f"/namespace/{namespace['name']}/role",
+        json={
+            "name": "second-user-role",
+            "permissions": [
+                "package-create",
+                "package-edit",
+            ],
+        },
+    )
     assert r.status_code == 201
 
     role_data = {
@@ -131,39 +140,53 @@ def test_create_namespace_role(auth_client: TestClient, namespace: dict):
 
     r = auth_client.get(f"/namespace/{namespace['name']}/role/{role_data['name']}")
     assert r.status_code == 200
-    assert r.json() == to_fuzzy_dict(role_data, {
-        ("permissions",): "unordered",
-    })
+    assert r.json() == to_fuzzy_dict(
+        role_data,
+        {
+            ("permissions",): "unordered",
+        },
+    )
 
     namespace["roles"].append(role_data)
 
     r = auth_client.get(f"/namespace/{namespace['name']}")
     assert r.status_code == 200
-    assert r.json() == to_fuzzy_dict(namespace, {
-        ("roles",): "unordered",
-        ("roles", None, "permissions"): "unordered",
-    })
+    assert r.json() == to_fuzzy_dict(
+        namespace,
+        {
+            ("roles",): "unordered",
+            ("roles", None, "permissions"): "unordered",
+        },
+    )
 
 
 def test_namespace_package(auth_client: TestClient, namespace: dict):
-    second_user_token = make_user(auth_client,
-                                  username="second-user",
-                                  email="second@localhost.localdomain",
-                                  password="hello world")
+    second_user_token = make_user(
+        auth_client,
+        username="second-user",
+        email="second@localhost.localdomain",
+        password="hello world",
+    )
 
-    r = auth_client.post(f"/namespace/{namespace['name']}/role", json={
-        "name": "second-user-role",
-        "permissions": [
-            "package-create",
-            "package-edit",
-        ],
-    })
+    r = auth_client.post(
+        f"/namespace/{namespace['name']}/role",
+        json={
+            "name": "second-user-role",
+            "permissions": [
+                "package-create",
+                "package-edit",
+            ],
+        },
+    )
     assert r.status_code == 201
 
-    r = auth_client.post(f"/namespace/{namespace['name']}/user", json={
-        "username": "second-user",
-        "role": "second-user-role",
-    })
+    r = auth_client.post(
+        f"/namespace/{namespace['name']}/user",
+        json={
+            "username": "second-user",
+            "role": "second-user-role",
+        },
+    )
     assert r.status_code == 201
 
     prev_header = auth_client.headers["Authorization"]
@@ -192,15 +215,21 @@ def test_namespace_package(auth_client: TestClient, namespace: dict):
     package = make_package_model(package, "second-user")
     r = auth_client.get(f"/package/{package['name']}")
     assert r.status_code == 200
-    assert r.json() == to_fuzzy_dict(package, {
-        ("labels",): "unordered",
-    })
+    assert r.json() == to_fuzzy_dict(
+        package,
+        {
+            ("labels",): "unordered",
+        },
+    )
 
     auth_client.headers["Authorization"] = prev_header
-    r = auth_client.post(f"/package/{package['name']}/tag", json={
-        "name": "test",
-        "version": "0.0.1",
-    })
+    r = auth_client.post(
+        f"/package/{package['name']}/tag",
+        json={
+            "name": "test",
+            "version": "0.0.1",
+        },
+    )
     assert r.status_code == 201
 
     r = auth_client.get(f"/package/{package['name']}/tag/test")

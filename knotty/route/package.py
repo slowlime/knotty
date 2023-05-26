@@ -2,10 +2,20 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from knotty import acl
+from knotty import acl, schema, storage, model
 from knotty.auth import AuthDep
-from .. import error, schema, storage, model
-from ..db import SessionDep
+from knotty.db import SessionDep
+from knotty.error import (
+    AlreadyExistsException,
+    HasDependentsException,
+    HasReferringTagsException,
+    NoPackageOwnerRemainsException,
+    NoPermissionException,
+    NotFoundException,
+    UnknownDependenciesException,
+    UnknownOwnersException,
+    exception_responses,
+)
 
 
 router = APIRouter()
@@ -43,7 +53,7 @@ def get_package_id(session: SessionDep, package: str) -> int:
     package_id = storage.get_package_id(session, package)
 
     if package_id is None:
-        raise error.not_found("Package")
+        raise NoPermissionException("Package")
 
     return package_id
 
@@ -53,7 +63,17 @@ def get_packages(session: SessionDep) -> list[schema.PackageBrief]:
     return storage.get_packages(session)
 
 
-@router.post("/package", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/package",
+    status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(
+        NoPermissionException,
+        NotFoundException,
+        AlreadyExistsException,
+        UnknownOwnersException,
+        UnknownDependenciesException,
+    ),
+)
 def create_package(
     session: SessionDep,
     auth: AuthDep,
@@ -65,7 +85,7 @@ def create_package(
 
     if body.namespace is not None:
         if not storage.get_namespace_exists(session, body.namespace):
-            raise error.not_found("Namespace")
+            raise NotFoundException("Namespace")
 
         user_namespace_permissions = acl.get_namespace_user_permissions(
             session, auth, body.namespace
@@ -75,10 +95,10 @@ def create_package(
             set(user_namespace_permissions),
             model.PermissionCode.package_create,
         ):
-            raise error.no_permission()
+            raise NoPermissionException()
 
     if storage.get_package_exists(session, body.name):
-        raise error.already_exists("Package")
+        raise AlreadyExistsException("Package")
 
     if auth.username not in body.owners:
         body.owners.add(auth.username)
@@ -86,7 +106,7 @@ def create_package(
     unknown_owners = storage.get_unknown_users(session, body.owners)
 
     if unknown_owners:
-        raise error.unknown_owners(unknown_owners)
+        raise UnknownOwnersException(unknown_owners)
 
     unknown_deps = storage.get_unknown_packages(
         session,
@@ -94,23 +114,32 @@ def create_package(
     )
 
     if unknown_deps:
-        raise error.unknown_dependencies(unknown_deps)
+        raise UnknownDependenciesException(unknown_deps)
 
     storage.create_package(session, body, created_by=auth)
     session.commit()
 
 
-@router.get("/package/{package}")
+@router.get("/package/{package}", responses=exception_responses(NotFoundException))
 def get_package(session: SessionDep, package: str) -> schema.Package:
     p = storage.get_package(session, package)
 
     if p is None:
-        raise error.not_found()
+        raise NotFoundException("Package")
 
     return p
 
 
-@router.post("/package/{package}")
+@router.post(
+    "/package/{package}",
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+        AlreadyExistsException,
+        UnknownOwnersException,
+        NoPackageOwnerRemainsException,
+    ),
+)
 def edit_package(
     session: SessionDep,
     auth: AuthDep,
@@ -122,7 +151,7 @@ def edit_package(
     current_package = storage.get_package_brief(session, package)
 
     if current_package is None:
-        raise error.not_found("Package")
+        raise NotFoundException("Package")
 
     acl.require(can_edit_check)
 
@@ -137,7 +166,7 @@ def edit_package(
                 set(user_namespace_permissions),
                 model.PermissionCode.namespace_admin,
             ):
-                raise error.no_permission()
+                raise NoPermissionException()
 
         # check if we can add the package to the requested namespace
         if body.namespace is not None:
@@ -149,30 +178,36 @@ def edit_package(
                 set(user_namespace_permissions),
                 model.PermissionCode.package_create,
             ):
-                raise error.no_permission()
+                raise NoPermissionException()
 
     if current_package.name != body.name and storage.get_package_exists(
         session, body.name
     ):
-        raise error.already_exists("Package")
+        raise AlreadyExistsException("Package")
 
     if current_package.owners != body.owners:
         if not can_edit_owners(session, auth, current_package, is_admin):
-            raise error.no_permission()
+            raise NoPermissionException()
 
     unknown_owners = storage.get_unknown_users(session, body.owners)
 
     if unknown_owners:
-        raise error.unknown_owners(unknown_owners)
+        raise UnknownOwnersException(unknown_owners)
 
     if not body.owners:
-        raise error.no_owner_remains()
+        raise NoPackageOwnerRemainsException()
 
     storage.edit_package(session, package, body, updated_by=auth)
     session.commit()
 
 
-@router.delete("/package/{package}")
+@router.delete(
+    "/package/{package}",
+    dependencies=[Depends(get_package_id)],
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, HasDependentsException
+    ),
+)
 def delete_package(
     session: SessionDep,
     package: str,
@@ -181,13 +216,15 @@ def delete_package(
     acl.require(can_delete_package)
 
     if storage.get_package_has_dependents(session, package):
-        raise error.has_dependents()
+        raise HasDependentsException()
 
     storage.delete_package(session, package)
     session.commit()
 
 
-@router.get("/package/{package}/version")
+@router.get(
+    "/package/{package}/version", responses=exception_responses(NotFoundException)
+)
 def get_package_versions(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -195,7 +232,16 @@ def get_package_versions(
     return storage.get_package_versions(session, package_id)
 
 
-@router.post("/package/{package}/version", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/package/{package}/version",
+    status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+        AlreadyExistsException,
+        UnknownDependenciesException,
+    ),
+)
 def create_package_version(
     session: SessionDep,
     auth: AuthDep,
@@ -206,7 +252,7 @@ def create_package_version(
     acl.require(can_edit_check)
 
     if storage.get_package_version_exists(session, package_id, str(body.version)):
-        raise error.already_exists("Version")
+        raise AlreadyExistsException("Version")
 
     unknown_deps = storage.get_unknown_packages(
         session,
@@ -214,13 +260,16 @@ def create_package_version(
     )
 
     if unknown_deps:
-        raise error.unknown_dependencies(unknown_deps)
+        raise UnknownDependenciesException(unknown_deps)
 
     storage.create_package_version(session, package_id, body, created_by=auth)
     session.commit()
 
 
-@router.get("/package/{package}/version/{version}")
+@router.get(
+    "/package/{package}/version/{version}",
+    responses=exception_responses(NotFoundException),
+)
 def get_package_version(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -229,12 +278,20 @@ def get_package_version(
     result = storage.get_package_version(session, package_id, version)
 
     if result is None:
-        raise error.not_found("Version")
+        raise NotFoundException("Version")
 
     return result
 
 
-@router.post("/package/{package}/version/{version}")
+@router.post(
+    "/package/{package}/version/{version}",
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+        AlreadyExistsException,
+        UnknownDependenciesException,
+    ),
+)
 def edit_package_version(
     session: SessionDep,
     auth: AuthDep,
@@ -246,13 +303,13 @@ def edit_package_version(
     current_version = storage.get_package_version(session, package_id, version)
 
     if current_version is None:
-        raise error.not_found("Version")
+        raise NotFoundException("Version")
 
     acl.require(can_edit_check)
 
     if current_version.version != body.version:
         if storage.get_package_version_exists(session, package_id, str(body.version)):
-            raise error.already_exists("Version")
+            raise AlreadyExistsException("Version")
 
     unknown_deps = storage.get_unknown_packages(
         session,
@@ -260,13 +317,20 @@ def edit_package_version(
     )
 
     if unknown_deps:
-        raise error.unknown_dependencies(unknown_deps)
+        raise UnknownDependenciesException(unknown_deps)
 
     storage.edit_package_version(session, package_id, version, body, updated_by=auth)
     session.commit()
 
 
-@router.delete("/package/{package}/version/{version}")
+@router.delete(
+    "/package/{package}/version/{version}",
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+        HasReferringTagsException,
+    ),
+)
 def delete_package_version(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -274,20 +338,18 @@ def delete_package_version(
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
 ):
     if not storage.get_package_version_exists(session, package_id, version):
-        raise error.not_found()
+        raise NotFoundException("Version")
 
     acl.require(can_edit_check)
 
     if storage.get_package_version_is_tagged(session, package_id, version):
-        raise error.has_referring_tags()
-
-    # FIXME: check if there are any tags referring to this version...
+        raise HasReferringTagsException()
 
     storage.delete_package_version(session, package_id, version)
     session.commit()
 
 
-@router.get("/package/{package}/tag")
+@router.get("/package/{package}/tag", responses=exception_responses(NotFoundException))
 def get_package_tags(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -295,7 +357,13 @@ def get_package_tags(
     return storage.get_package_tags(session, package_id)
 
 
-@router.post("/package/{package}/tag", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/package/{package}/tag",
+    status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(
+        NotFoundException, NoPermissionException, AlreadyExistsException
+    ),
+)
 def create_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -305,16 +373,18 @@ def create_package_tag(
     acl.require(can_edit_check)
 
     if storage.get_package_tag_exists(session, package_id, body.name):
-        raise error.already_exists("Tag")
+        raise AlreadyExistsException("Tag")
 
     if not storage.get_package_version_exists(session, package_id, body.version):
-        raise error.not_found("Version")
+        raise NotFoundException("Version")
 
     storage.create_package_tag(session, package_id, body)
     session.commit()
 
 
-@router.get("/package/{package}/tag/{tag}")
+@router.get(
+    "/package/{package}/tag/{tag}", responses=exception_responses(NotFoundException)
+)
 def get_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -323,12 +393,19 @@ def get_package_tag(
     result = storage.get_package_tag(session, package_id, tag)
 
     if result is None:
-        raise error.not_found("Tag")
+        raise NotFoundException("Tag")
 
     return result
 
 
-@router.post("/package/{package}/tag/{tag}")
+@router.post(
+    "/package/{package}/tag/{tag}",
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+        AlreadyExistsException,
+    ),
+)
 def edit_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -339,22 +416,24 @@ def edit_package_tag(
     current_tag = storage.get_package_tag(session, package_id, tag)
 
     if current_tag is None:
-        raise error.not_found("Tag")
+        raise NotFoundException("Tag")
 
     acl.require(can_edit_check)
 
     if current_tag.name != body.name:
         if storage.get_package_tag_exists(session, package_id, body.name):
-            raise error.already_exists("Tag")
+            raise AlreadyExistsException("Tag")
 
     if not storage.get_package_version_exists(session, package_id, body.version):
-        raise error.not_found("Version")
+        raise NotFoundException("Version")
 
     storage.edit_package_tag(session, package_id, tag, body)
     session.commit()
 
 
-@router.delete("/package/{package}/tag/{tag}")
+@router.delete(
+    "/package/{package}/tag/{tag}", responses=exception_responses(NotFoundException)
+)
 def delete_package_tag(
     session: SessionDep,
     package_id: Annotated[int, Depends(get_package_id)],
@@ -362,7 +441,7 @@ def delete_package_tag(
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
 ):
     if not storage.get_package_tag_exists(session, package_id, tag):
-        raise error.not_found("Tag")
+        raise NotFoundException("Tag")
 
     acl.require(can_edit_check)
 

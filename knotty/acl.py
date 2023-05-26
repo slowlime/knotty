@@ -3,8 +3,8 @@ from fastapi import Depends
 
 from knotty import model, storage
 from knotty.db import SessionDep
-from knotty.error import no_permission
 from knotty.auth import AuthDep
+from knotty.error import NoPermissionException
 
 
 def is_admin(auth: AuthDep) -> bool:
@@ -205,4 +205,4 @@ def require(check: bool | None, allow_by_default: bool = False):
         check = allow_by_default
 
     if not check:
-        raise no_permission()
+        raise NoPermissionException()

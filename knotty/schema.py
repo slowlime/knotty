@@ -73,6 +73,10 @@ class BaseKnottyModel(BaseModel):
         json_encoders = {Version: str}
 
 
+class ErrorModel(BaseKnottyModel):
+    detail: str
+
+
 class WithId(BaseKnottyModel):
     id: int
 
@@ -351,6 +355,10 @@ class Permission(BaseKnottyModel):
 
     class Config:
         orm_mode = True
+
+
+class KnottyInfo(BaseKnottyModel):
+    version: str
 
 
 Namespace.update_forward_refs()

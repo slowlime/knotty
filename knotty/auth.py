@@ -9,10 +9,10 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from . import model, storage
-from .config import Config, ConfigDep
-from .db import SessionDep
-from .error import unauthorized
+from knotty import model, storage
+from knotty.config import Config, ConfigDep
+from knotty.db import SessionDep
+from knotty.error import UnauthorizedException
 
 JWT_ALGORITHM = "HS256"
 
@@ -76,20 +76,20 @@ def get_current_user(
         if sub is None:
             logger.error("Received a valid JWT without sub field! Payload: %s", payload)
 
-            raise unauthorized()
+            raise UnauthorizedException()
 
         username = sub[len("username:"):]
     except JWTError:
         logger.info("Received an invalid JWT", exc_info=True)
 
-        raise unauthorized()
+        raise UnauthorizedException()
 
     user = storage.get_user_model(session, username)
 
     if user is None:
         logger.error("Received a valid JWT for invalid user %s!", sub)
 
-        raise unauthorized()
+        raise UnauthorizedException()
 
     logger.debug("Username %s has been authenticated", user.username)
 

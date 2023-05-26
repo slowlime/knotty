@@ -5,15 +5,30 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from knotty.config import ConfigDep
-from .. import acl, error, schema, storage
-from ..auth import JwtTokenData, auth_user, create_token, hash_password
-from ..db import SessionDep
+from knotty import acl, schema, storage
+from knotty.auth import JwtTokenData, auth_user, create_token, hash_password
+from knotty.db import SessionDep
+from knotty.error import (
+    EmailRegisteredException,
+    InvalidCredentialsException,
+    NoPermissionException,
+    NotFoundException,
+    UnauthorizedException,
+    UsernameTakenException,
+    exception_responses,
+)
 
 
 router = APIRouter()
 
 
-@router.get("/user/{username}")
+@router.get(
+    "/user/{username}",
+    responses=exception_responses(
+        NotFoundException,
+        NoPermissionException,
+    ),
+)
 def get_user(
     session: SessionDep,
     username: str,
@@ -24,9 +39,9 @@ def get_user(
 
     if not user:
         if is_admin:
-            raise error.not_found()
+            raise NotFoundException("User")
         else:
-            raise error.no_permission()
+            raise NoPermissionException()
 
     acl.require(user_view)
 
@@ -40,7 +55,7 @@ def get_user(
     )
 
 
-@router.post("/login")
+@router.post("/login", responses=exception_responses(InvalidCredentialsException))
 def login(
     config: ConfigDep,
     session: SessionDep,
@@ -49,7 +64,7 @@ def login(
     user = auth_user(session, form_data.username, form_data.password)
 
     if user is None:
-        raise error.invalid_credentials()
+        raise InvalidCredentialsException()
 
     token = create_token(
         JwtTokenData.for_username(form_data.username), config.token_expiry, config
@@ -58,14 +73,18 @@ def login(
     return schema.AuthToken(access_token=token)
 
 
-@router.post("/user", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/user",
+    status_code=status.HTTP_201_CREATED,
+    responses=exception_responses(UsernameTakenException, EmailRegisteredException),
+)
 def register(session: SessionDep, body: schema.UserRegister) -> None:
     match storage.get_user_registered(session, body.username, body.email):
         case schema.UserRegistered.username_taken:
-            raise error.username_taken()
+            raise UsernameTakenException()
 
         case schema.UserRegistered.email_registered:
-            raise error.email_registered()
+            raise EmailRegisteredException()
 
         case schema.UserRegistered.not_registered:
             pass

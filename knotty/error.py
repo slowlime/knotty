@@ -1,114 +1,257 @@
-from collections.abc import Iterable
-from fastapi import HTTPException, status
+from typing import Any, ClassVar
+from fastapi import status
+
+from knotty.schema import ErrorModel
 
 
-def unauthorized() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not authenticate the user",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+class KnottyException(Exception):
+    Model: ClassVar[type[ErrorModel]]
+
+    status_code: ClassVar[int]
+    description: ClassVar[str]
+
+    detail: str
+    headers: dict[str, str] | None
+
+    def __init__(
+        self, detail: str | None = None, headers: dict[str, str] | None = None
+    ):
+        if detail is None:
+            detail = self.description
+
+        self.detail = detail
+        self.headers = headers
+
+    def __init_subclass__(
+        cls,
+        /,
+        status_code: int,
+        description: str,
+        model: type[ErrorModel] | None = None,
+        **kwargs,
+    ):
+        super().__init_subclass__(**kwargs)
+        cls.Model = model or ErrorModel
+
+        cls.status_code = status_code
+        cls.description = description
+
+    @property
+    def data(self) -> ErrorModel:
+        return ErrorModel(detail=self.detail)
 
 
-def invalid_credentials() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid username and/or password",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+class UnauthorizedException(
+    KnottyException,
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    description="Could not authenticate the user",
+):
+    def __init__(self):
+        super().__init__(headers={"WWW-Authenticate": "Bearer"})
 
 
-def no_permission() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Access denied due to insufficient permissions",
-    )
+class InvalidCredentialsException(
+    KnottyException,
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    description="Invalid username and/or password",
+):
+    def __init__(self):
+        super().__init__(headers={"WWW-Authenticate": "Bearer"})
 
 
-def username_taken() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Username is already taken",
-    )
+class NoPermissionException(
+    KnottyException,
+    status_code=status.HTTP_403_FORBIDDEN,
+    description="Access denied due to insufficient permissions",
+):
+    pass
 
 
-def email_registered() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Email is already registered",
-    )
+class UsernameTakenException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Username is already taken",
+):
+    pass
 
 
-def not_found(what: str | None = None) -> HTTPException:
-    detail = f"{what} not found" if what is not None else None
-
-    return HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=detail,
-    )
-
-
-def already_exists(what: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail=f"{what} already exists",
-    )
+class EmailRegisteredException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Email is already registered",
+):
+    pass
 
 
-def no_owner_remains() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Operation would leave namespace without owner",
-    )
+class NotFoundErrorModel(ErrorModel):
+    what: str | None
 
 
-def role_not_empty() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Cannot remove namespace role with members",
-    )
+class NotFoundException(
+    KnottyException,
+    status_code=status.HTTP_404_NOT_FOUND,
+    description="Resource not found",
+    model=NotFoundErrorModel,
+):
+    what: str
+
+    def __init__(self, what: str):
+        super().__init__(
+            detail=f"{what} not found",
+        )
+
+        self.what = what
+
+    @property
+    def data(self) -> NotFoundErrorModel:
+        return NotFoundErrorModel(what=self.what, **super().data.dict())
 
 
-def unknown_owners(usernames: list[str]) -> HTTPException:
-    detail = "Owners list includes unknown users"
-
-    if usernames:
-        detail += " " + ", ".join(usernames)
-
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=detail,
-    )
+class AlreadyExistsErrorModel(ErrorModel):
+    what: str
 
 
-def unknown_dependencies(packages: list[str]) -> HTTPException:
-    match packages:
-        case []:
-            detail = "Package requires unknown dependencies"
+class AlreadyExistsException(
+    KnottyException,
+    status_code=status.HTTP_409_CONFLICT,
+    description="Resource already exists",
+    model=AlreadyExistsErrorModel,
+):
+    what: str
 
-        case [package]:
-            detail = f"Package requires unknown dependency {package}"
+    def __init__(self, what: str):
+        super().__init__(
+            detail=f"{what} already exists",
+        )
 
-        case _:
-            detail = "Package requires unknown dependencies {}".format(
-                ", ".join(packages)
-            )
+        self.what = what
 
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=detail,
-    )
-
-
-def has_dependents() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Package has dependent packages",
-    )
+    @property
+    def data(self) -> AlreadyExistsErrorModel:
+        return AlreadyExistsErrorModel(
+            what=self.what,
+            **super().data.dict(),
+        )
 
 
-def has_referring_tags() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Package has tags referring to this version",
-    )
+class NoNamespaceOwnerRemainsException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Operation would leave namespace without owner",
+):
+    pass
+
+
+class NoPackageOwnerRemainsException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Operation would leave package without owner",
+):
+    pass
+
+
+class RoleNotEmptyException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Cannot remove namespace role with members",
+):
+    pass
+
+
+class UnknownOwnersErrorModel(ErrorModel):
+    usernames: list[str]
+
+
+class UnknownOwnersException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Owner list includes unknown users",
+    model=UnknownOwnersErrorModel,
+):
+    usernames: list[str]
+
+    def __init__(self, usernames: list[str]):
+        detail = "Owner list includes unknown users"
+
+        if usernames:
+            detail += " " + ", ".join(usernames)
+
+        super().__init__(
+            detail=detail,
+        )
+
+        self.usernames = usernames
+
+    @property
+    def data(self) -> UnknownOwnersErrorModel:
+        return UnknownOwnersErrorModel(
+            usernames=self.usernames,
+            **super().data.dict(),
+        )
+
+
+class UnknownDependenciesErrorModel(ErrorModel):
+    packages: list[str]
+
+
+class UnknownDependenciesException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Package requires unknown dependencies",
+    model=UnknownDependenciesErrorModel,
+):
+    packages: list[str]
+
+    def __init__(self, packages: list[str]):
+        match packages:
+            case []:
+                detail = "Package requires unknown dependencies"
+
+            case [package]:
+                detail = f"Package requires unknown dependency {package}"
+
+            case _:
+                detail = "Package requires unknown dependencies {}".format(
+                    ", ".join(packages)
+                )
+
+        super().__init__(
+            detail=detail,
+        )
+
+        self.packages = packages
+
+    @property
+    def data(self) -> UnknownDependenciesErrorModel:
+        return UnknownDependenciesErrorModel(
+            packages=self.packages,
+            **super().data.dict(),
+        )
+
+
+class HasDependentsException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Package has dependent packages",
+):
+    pass
+
+
+class HasReferringTagsException(
+    KnottyException,
+    status_code=status.HTTP_400_BAD_REQUEST,
+    description="Package has tags referring to this version",
+):
+    pass
+
+
+def exception_responses(
+    *exceptions: type[KnottyException],
+) -> dict[int | str, dict[str, Any]]:
+    return {
+        exception.status_code: {
+            "description": exception.description,
+            "model": exception.Model,
+        }
+        for exception in exceptions
+    }
