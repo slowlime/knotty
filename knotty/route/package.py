@@ -80,7 +80,7 @@ def create_package(
     body: schema.PackageCreate,
     can_create_package_check: Annotated[bool, Depends(acl.can_create_package)],
     is_admin: Annotated[bool, Depends(acl.is_admin)],
-):
+) -> schema.Message:
     acl.require(can_create_package_check)
 
     if body.namespace is not None:
@@ -119,6 +119,8 @@ def create_package(
     storage.create_package(session, body, created_by=auth)
     session.commit()
 
+    return schema.Message(message="Package created")
+
 
 @router.get("/package/{package}", responses=exception_responses(NotFoundException))
 def get_package(session: SessionDep, package: str) -> schema.Package:
@@ -147,7 +149,7 @@ def edit_package(
     body: schema.PackageEdit,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
     is_admin: Annotated[bool, Depends(acl.is_admin)],
-):
+) -> schema.Message:
     current_package = storage.get_package_brief(session, package)
 
     if current_package is None:
@@ -200,6 +202,8 @@ def edit_package(
     storage.edit_package(session, package, body, updated_by=auth)
     session.commit()
 
+    return schema.Message(message="Package updated")
+
 
 @router.delete(
     "/package/{package}",
@@ -212,7 +216,7 @@ def delete_package(
     session: SessionDep,
     package: str,
     can_delete_package: Annotated[bool, Depends(acl.can_delete_package)],
-):
+) -> schema.Message:
     acl.require(can_delete_package)
 
     if storage.get_package_has_dependents(session, package):
@@ -220,6 +224,8 @@ def delete_package(
 
     storage.delete_package(session, package)
     session.commit()
+
+    return schema.Message(message="Package deleted")
 
 
 @router.get(
@@ -248,7 +254,7 @@ def create_package_version(
     package_id: Annotated[int, Depends(get_package_id)],
     body: schema.PackageVersionCreate,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
-):
+) -> schema.Message:
     acl.require(can_edit_check)
 
     if storage.get_package_version_exists(session, package_id, str(body.version)):
@@ -264,6 +270,8 @@ def create_package_version(
 
     storage.create_package_version(session, package_id, body, created_by=auth)
     session.commit()
+
+    return schema.Message(message="Package version added")
 
 
 @router.get(
@@ -299,7 +307,7 @@ def edit_package_version(
     version: str,
     body: schema.PackageVersionEdit,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
-):
+) -> schema.Message:
     current_version = storage.get_package_version(session, package_id, version)
 
     if current_version is None:
@@ -322,6 +330,8 @@ def edit_package_version(
     storage.edit_package_version(session, package_id, version, body, updated_by=auth)
     session.commit()
 
+    return schema.Message(message="Package version updated")
+
 
 @router.delete(
     "/package/{package}/version/{version}",
@@ -336,7 +346,7 @@ def delete_package_version(
     package_id: Annotated[int, Depends(get_package_id)],
     version: str,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
-):
+) -> schema.Message:
     if not storage.get_package_version_exists(session, package_id, version):
         raise NotFoundException("Version")
 
@@ -347,6 +357,8 @@ def delete_package_version(
 
     storage.delete_package_version(session, package_id, version)
     session.commit()
+
+    return schema.Message(message="Package version deleted")
 
 
 @router.get("/package/{package}/tag", responses=exception_responses(NotFoundException))
@@ -369,7 +381,7 @@ def create_package_tag(
     package_id: Annotated[int, Depends(get_package_id)],
     body: schema.PackageTag,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
-):
+) -> schema.Message:
     acl.require(can_edit_check)
 
     if storage.get_package_tag_exists(session, package_id, body.name):
@@ -380,6 +392,8 @@ def create_package_tag(
 
     storage.create_package_tag(session, package_id, body)
     session.commit()
+
+    return schema.Message(message="Package tag created")
 
 
 @router.get(
@@ -412,7 +426,7 @@ def edit_package_tag(
     tag: str,
     body: schema.PackageTag,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
-):
+) -> schema.Message:
     current_tag = storage.get_package_tag(session, package_id, tag)
 
     if current_tag is None:
@@ -430,6 +444,8 @@ def edit_package_tag(
     storage.edit_package_tag(session, package_id, tag, body)
     session.commit()
 
+    return schema.Message(message="Package tag updated")
+
 
 @router.delete(
     "/package/{package}/tag/{tag}", responses=exception_responses(NotFoundException)
@@ -439,7 +455,7 @@ def delete_package_tag(
     package_id: Annotated[int, Depends(get_package_id)],
     tag: str,
     can_edit_check: Annotated[bool, Depends(acl.can_edit_package)],
-):
+) -> schema.Message:
     if not storage.get_package_tag_exists(session, package_id, tag):
         raise NotFoundException("Tag")
 
@@ -447,3 +463,5 @@ def delete_package_tag(
 
     storage.delete_package_tag(session, package_id, tag)
     session.commit()
+
+    return schema.Message(message="Package tag deleted")

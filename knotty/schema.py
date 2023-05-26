@@ -77,6 +77,10 @@ class ErrorModel(BaseKnottyModel):
     detail: str
 
 
+class Message(BaseKnottyModel):
+    message: str
+
+
 class WithId(BaseKnottyModel):
     id: int
 

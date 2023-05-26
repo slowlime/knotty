@@ -13,7 +13,6 @@ from knotty.error import (
     InvalidCredentialsException,
     NoPermissionException,
     NotFoundException,
-    UnauthorizedException,
     UsernameTakenException,
     exception_responses,
 )

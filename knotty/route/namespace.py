@@ -38,7 +38,7 @@ def create_namespace(
     body: schema.NamespaceCreate,
     auth: AuthDep,
     namespace_create_check: Annotated[bool | None, Depends(acl.can_add_namespace)],
-):
+) -> schema.Message:
     acl.require(namespace_create_check)
 
     if storage.get_namespace_exists(session, body.name):
@@ -46,6 +46,8 @@ def create_namespace(
 
     storage.create_namespace(session, body, auth, config)
     session.commit()
+
+    return schema.Message(message="Namespace created")
 
 
 @router.get("/namespace/{namespace}", responses=exception_responses(NotFoundException))
@@ -71,7 +73,7 @@ def edit_namespace(
     body: schema.NamespaceEdit,
     namespace_edit_check: Annotated[bool | None, Depends(acl.check_namespace_edit)],
     namespace_admin_check: Annotated[bool | None, Depends(acl.check_namespace_admin)],
-):
+) -> schema.Message:
     acl.require(namespace_edit_check)
 
     if body.name != namespace:
@@ -83,6 +85,8 @@ def edit_namespace(
     storage.edit_namespace(session, namespace, body)
     session.commit()
 
+    return schema.Message(message="Namespace updated")
+
 
 @router.delete(
     "/namespace/{namespace}",
@@ -93,11 +97,13 @@ def delete_namespace(
     session: SessionDep,
     namespace: str,
     namespace_owner_check: Annotated[bool | None, Depends(acl.check_namespace_owner)],
-):
+) -> schema.Message:
     acl.require(namespace_owner_check)
 
     storage.delete_namespace(session, namespace)
     session.commit()
+
+    return schema.Message(message="Namespace deleted")
 
 
 @router.get(
@@ -139,7 +145,7 @@ def create_namespace_user(
     namespace_admin_check: Annotated[bool | None, Depends(acl.check_namespace_admin)],
     user_namespace_permissions: acl.NamespacePermissions,
     is_admin: Annotated[bool, Depends(acl.is_admin)],
-):
+) -> schema.Message:
     acl.require(namespace_admin_check)
 
     if not storage.get_user_exists(session, body.username):
@@ -162,6 +168,8 @@ def create_namespace_user(
 
     storage.create_namespace_user(session, namespace_id, body, added_by=auth)
     session.commit()
+
+    return schema.Message(message="User added to namespace")
 
 
 @router.get(
@@ -198,7 +206,7 @@ def edit_namespace_user(
     is_admin: Annotated[bool, Depends(acl.is_admin)],
     namespace_id: Annotated[int, Depends(check_namespace_exists)],
     user_namespace_permissions: acl.NamespacePermissions,
-):
+) -> schema.Message:
     acl.require(namespace_admin_check)
 
     if not storage.get_namespace_user_exists(session, namespace_id, username):
@@ -228,6 +236,8 @@ def edit_namespace_user(
     storage.edit_namespace_user(session, namespace_id, username, body, updated_by=auth)
     session.commit()
 
+    return schema.Message(message="Namespace user updated")
+
 
 @router.delete(
     "/namespace/{namespace}/user/{username}",
@@ -244,7 +254,7 @@ def delete_namespace_user(
     user_namespace_permissions: acl.NamespacePermissions,
     is_admin: Annotated[bool, Depends(acl.is_admin)],
     namespace_id: Annotated[int, Depends(check_namespace_exists)],
-):
+) -> schema.Message:
     if username != auth.username:
         acl.require(namespace_admin_check)
 
@@ -264,6 +274,8 @@ def delete_namespace_user(
 
     storage.delete_namespace_user(session, namespace_id, username)
     session.commit()
+
+    return schema.Message(message="User removed from namespace")
 
 
 @router.get(
@@ -293,7 +305,7 @@ def create_namespace_role(
     namespace_admin_check: Annotated[bool | None, Depends(acl.check_namespace_admin)],
     user_namespace_permissions: acl.NamespacePermissions,
     is_admin: Annotated[bool, Depends(acl.is_admin)],
-):
+) -> schema.Message:
     acl.require(namespace_admin_check)
 
     if storage.get_namespace_role_exists(session, namespace_id, body.name):
@@ -306,6 +318,8 @@ def create_namespace_role(
 
     storage.create_namespace_role(session, namespace_id, body, created_by=auth)
     session.commit()
+
+    return schema.Message(message="Namespace role added")
 
 
 @router.get(
@@ -345,7 +359,7 @@ def edit_namespace_role(
     namespace_admin_check: Annotated[bool | None, Depends(acl.check_namespace_admin)],
     user_namespace_permissions: acl.NamespacePermissions,
     is_admin: Annotated[bool, Depends(acl.is_admin)],
-):
+) -> schema.Message:
     acl.require(namespace_admin_check)
 
     if not storage.get_namespace_role_exists(session, namespace_id, role):
@@ -383,6 +397,8 @@ def edit_namespace_role(
     storage.edit_namespace_role(session, namespace_id, role, body, updated_by=auth)
     session.commit()
 
+    return schema.Message(message="Namespace role updated")
+
 
 @router.delete(
     "/namespace/{namespace}/role/{role}",
@@ -398,7 +414,7 @@ def delete_namespace_role(
     namespace_admin_check: Annotated[bool | None, Depends(acl.check_namespace_admin)],
     user_namespace_permissions: acl.NamespacePermissions,
     is_admin: Annotated[bool, Depends(acl.is_admin)],
-):
+) -> schema.Message:
     acl.require(namespace_admin_check)
 
     if not storage.get_namespace_role_exists(session, namespace_id, role):
@@ -418,3 +434,5 @@ def delete_namespace_role(
 
     storage.delete_namespace_role(session, namespace_id, role)
     session.commit()
+
+    return schema.Message(message="Namespace role deleted")
