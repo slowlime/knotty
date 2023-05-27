@@ -729,5 +729,41 @@ def publish(
     )
 
 
+@app.command()
+def unpublish(
+    ctx: typer.Context,
+    pkg: Annotated[str, typer.Argument(show_default=False)],
+    version: Annotated[str, typer.Argument(show_default=False)],
+    yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
+):
+    """Remove a package version."""
+
+    obj: AuthenticatedContextObj = ctx.obj.to_authenticated()
+
+    if not yes:
+        typer.confirm("Are you sure you want to remove the version?", abort=True)
+
+    response = assert_not_none(
+        delete_package_version.sync(pkg, version, client=obj.client),
+    )
+
+    match response:
+        case ErrorModel() | HTTPValidationError() | NotFoundErrorModel():
+            print_error(response, ctx=obj)
+            raise typer.Abort()
+
+        case Message():
+            pass
+
+        case _:
+            assert_never(response)
+
+    obj.console.print(
+        "[bold green]Success![/] {message}".format(
+            message=escape(response.message),
+        )
+    )
+
+
 app.add_typer(pkg_app)
 app.add_typer(tag_app)
