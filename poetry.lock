@@ -403,6 +403,17 @@ pygments = ">=2.13.0,<3.0.0"
 jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
+name = "semver"
+version = "3.0.0"
+description = "Python helper for Semantic Versioning (https://semver.org)"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "semver-3.0.0-py3-none-any.whl", hash = "sha256:ab4f69fb1d1ecfb5d81f96411403d7a611fa788c45d252cf5b408025df3ab6ce"},
+    {file = "semver-3.0.0.tar.gz", hash = "sha256:94df43924c4521ec7d307fc86da1531db6c2c33d9d5cdc3e64cca0eb68569269"},
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.0.post1"
 description = "Tool to Detect Surrounding Shell"
@@ -495,4 +506,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "e5adb8c01d3e778ae5d93095f7ca0b58ad0498022696c35a4dd393450ddfaf72"
+content-hash = "ab7dba867d82d96b08fdcf44e1e3d9951ba2deddac792b0fb217054618ed4b6f"

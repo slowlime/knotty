@@ -1,0 +1,35 @@
+manifest_version = 1
+
+version = "1.0.0"
+description = '''
+Hello world!
+
+**Mark**_Down_ is ~~fully~~ supported!
+
+1. Item 1.
+1. Item 2.
+
+   0. Item 2.0
+   0. Item 2.1
+
+      - Bullets
+
+        - Nested
+
+    **Did you know?** This is Markdown!
+
+> > > 2023
+> >
+> > tables still not supported
+>
+> ik right
+
+```python
+raise NotImplementedError()
+```
+'''
+tarball = "https://localhost/index.html"
+
+[[dependencies]]
+package = "hello-world"
+spec = "^0.0.1"

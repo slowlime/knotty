@@ -1,4 +1,5 @@
-from typing import Annotated, Generic, Literal, Optional, TypeVar
+from pathlib import Path
+from typing import Annotated, Optional
 from typing_extensions import assert_never
 
 from knotty_client.api.default import (
@@ -7,6 +8,12 @@ from knotty_client.api.default import (
     create_package,
     edit_package,
     delete_package,
+    create_package_tag,
+    edit_package_tag,
+    delete_package_tag,
+    create_package_version,
+    edit_package_version,
+    delete_package_version,
 )
 from knotty_client.models import (
     HTTPValidationError,
@@ -16,10 +23,16 @@ from knotty_client.models import (
     PackageCreate,
     PackageEdit,
     PackageVersion,
+    PackageTag,
     AlreadyExistsErrorModel,
     Message,
     UnknownDependenciesErrorModel,
 )
+from knotty_client.models.checksum_algorithm import ChecksumAlgorithm
+from knotty_client.models.package_checksum import PackageChecksum
+from knotty_client.models.package_dependency import PackageDependency
+from knotty_client.models.package_version_create import PackageVersionCreate
+from knotty_client.models.package_version_edit import PackageVersionEdit
 from knotty_client.types import UNSET
 from rich import box
 from rich.align import Align
@@ -36,12 +49,16 @@ import typer
 from knot.app import app
 from knot.ctx import AuthenticatedContextObj, ContextObj
 from knot.error import print_error
+from knot.manifest import read_manifest
 from knot.util import (
     assert_not_none,
     coerce_none_to_unset,
     coerce_unset_to_none,
     or_default,
 )
+
+
+DEFAULT_MANIFEST_PATH = Path(".") / "knot-manifest.toml"
 
 
 @app.command("list")
@@ -107,7 +124,7 @@ def list_packages(
 def get_package(pkg: str, obj: ContextObj) -> Package:
     match response := assert_not_none(api_get_package.sync(pkg, client=obj.client)):
         case HTTPValidationError() | NotFoundErrorModel():
-            print_error(response)
+            print_error(response, ctx=obj)
             raise typer.Abort()
 
         case Package():
@@ -490,4 +507,227 @@ def pkg_delete(
     )
 
 
+tag_app = typer.Typer()
+
+
+@tag_app.callback("tag")
+def tag_cmd():
+    """Manage package tags."""
+
+
+@tag_app.command("create")
+def tag_create(
+    ctx: typer.Context,
+    pkg: Annotated[str, typer.Argument(show_default=False)],
+    tag: Annotated[str, typer.Argument(show_default=False)],
+    version: Annotated[str, typer.Argument(show_default=False)],
+):
+    """Create a new package tag pointing to the provided version."""
+
+    obj: AuthenticatedContextObj = ctx.obj.to_authenticated()
+
+    request = PackageTag(name=tag, version=version)
+    response = assert_not_none(
+        create_package_tag.sync(pkg, client=obj.client, json_body=request)
+    )
+
+    match response:
+        case AlreadyExistsErrorModel() | ErrorModel() | HTTPValidationError() | NotFoundErrorModel():
+            print_error(response, ctx=obj)
+            raise typer.Abort()
+
+        case Message():
+            pass
+
+        case _:
+            assert_never(response)
+
+    obj.console.print(
+        "[bold green]Success![/] {message}".format(
+            message=escape(response.message),
+        )
+    )
+
+
+@tag_app.command("edit")
+def tag_edit(
+    ctx: typer.Context,
+    pkg: Annotated[str, typer.Argument(show_default=False)],
+    tag: Annotated[str, typer.Argument(show_default=False)],
+    version: Annotated[str, typer.Argument(show_default=False)],
+    name: Annotated[
+        Optional[str],
+        typer.Option("--name", show_default="Current tag name"),  # type: ignore
+    ] = None,
+):
+    """Update a package tag to point to the provided version."""
+
+    obj: AuthenticatedContextObj = ctx.obj.to_authenticated()
+
+    request = PackageTag(name=or_default(name, tag), version=version)
+    response = assert_not_none(
+        edit_package_tag.sync(pkg, tag, client=obj.client, json_body=request),
+    )
+
+    match response:
+        case AlreadyExistsErrorModel() | ErrorModel() | HTTPValidationError() | NotFoundErrorModel():
+            print_error(response, ctx=obj)
+            raise typer.Abort()
+
+        case Message():
+            pass
+
+        case _:
+            assert_never(response)
+
+    obj.console.print(
+        "[bold green]Success![/] {message}".format(message=escape(response.message))
+    )
+
+
+@tag_app.command("delete")
+def tag_delete(
+    ctx: typer.Context,
+    pkg: Annotated[str, typer.Argument(show_default=False)],
+    tag: Annotated[str, typer.Argument(show_default=False)],
+    yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
+):
+    """Delete a package tag."""
+
+    obj: AuthenticatedContextObj = ctx.obj.to_authenticated()
+
+    if not yes:
+        typer.confirm("Are you sure you want to delete the package tag?", abort=True)
+
+    response = assert_not_none(delete_package_tag.sync(pkg, tag, client=obj.client))
+
+    match response:
+        case ErrorModel() | HTTPValidationError() | NotFoundErrorModel():
+            print_error(response, ctx=obj)
+            raise typer.Abort()
+
+        case Message():
+            pass
+
+        case _:
+            assert_never(response)
+
+    obj.console.print(
+        "[bold green]Success![/] {message}".format(message=escape(response.message))
+    )
+
+
+@app.command()
+def publish(
+    ctx: typer.Context,
+    pkg: Annotated[str, typer.Argument(show_default=False)],
+    manifest_path: Annotated[
+        Path, typer.Option("--manifest", "-m")
+    ] = DEFAULT_MANIFEST_PATH,
+    replace: Annotated[Optional[str], typer.Option("--replace")] = None,
+    yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
+):
+    """Publish a package manifest as a new version."""
+
+    obj: AuthenticatedContextObj = ctx.obj.to_authenticated()
+    manifest = read_manifest(manifest_path)
+
+    request = {
+        "version": str(manifest.version),
+        "description": manifest.description,
+        "checksums": [
+            {
+                "algorithm": ChecksumAlgorithm(checksum.algorithm.lower()),
+                "value": checksum.value,
+            }
+            for checksum in manifest.checksums
+        ],
+        "dependencies": [
+            {
+                "package": dep.package,
+                "spec": dep.spec,
+            }
+            for dep in manifest.dependencies
+        ],
+        "repository": coerce_none_to_unset(manifest.repository),
+        "tarball": coerce_none_to_unset(manifest.tarball),
+    }
+
+    response = None
+    manually_confirmed = False
+
+    if replace is None:
+        response = assert_not_none(
+            create_package_version.sync(
+                pkg,
+                client=obj.client,
+                json_body=PackageVersionCreate.from_dict(request),
+            )
+        )
+
+        match response:
+            case AlreadyExistsErrorModel() if response.what == "Version" and (
+                yes
+                or (
+                    manually_confirmed := typer.confirm(
+                        "This version of the package already exists. "
+                        + "Are you sure you want to replace it?"
+                    )
+                )
+            ):
+                pass
+
+            case AlreadyExistsErrorModel() | ErrorModel() | HTTPValidationError() | NotFoundErrorModel() | UnknownDependenciesErrorModel():
+                print_error(response, ctx=obj)
+                raise typer.Abort()
+
+            case Message():
+                pass
+
+            case _:
+                assert_never(response)
+
+        if isinstance(response, AlreadyExistsErrorModel):
+            obj.console.print(
+                "[bold red]Version already exists, replacing...[/] "
+                + (
+                    "(forced by [italic]--yes[/])"
+                    if not manually_confirmed
+                    else "(forced by user)"
+                )
+            )
+            replace = str(manifest.version)
+    elif not yes:
+        typer.confirm("Are you sure you want to replace the version?", abort=True)
+
+    if replace:
+        response = assert_not_none(
+            edit_package_version.sync(
+                package=pkg,
+                version=replace,
+                client=obj.client,
+                json_body=PackageVersionEdit.from_dict(request),
+            )
+        )
+
+        match response:
+            case AlreadyExistsErrorModel() | ErrorModel() | HTTPValidationError() | NotFoundErrorModel() | UnknownDependenciesErrorModel():
+                print_error(response, ctx=obj)
+                raise typer.Abort()
+
+            case Message():
+                pass
+
+            case _:
+                assert_never(response)
+
+    assert isinstance(response, Message)
+    obj.console.print(
+        "[bold green]Success![/] {message}".format(
+            message=escape(response.message),
+        )
+    )
+
+
 app.add_typer(pkg_app)
+app.add_typer(tag_app)
