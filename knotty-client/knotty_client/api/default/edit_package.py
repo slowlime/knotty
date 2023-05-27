@@ -45,6 +45,10 @@ def _parse_response(
         response_200 = Message.from_dict(response.json())
 
         return response_200
+    if response.status_code == HTTPStatus.UNAUTHORIZED:
+        response_401 = ErrorModel.from_dict(response.json())
+
+        return response_401
     if response.status_code == HTTPStatus.NOT_FOUND:
         response_404 = NotFoundErrorModel.from_dict(response.json())
 

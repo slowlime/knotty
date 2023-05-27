@@ -5,6 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.error_model import ErrorModel
 from ...models.http_validation_error import HTTPValidationError
 from ...models.message import Message
 from ...models.not_found_error_model import NotFoundErrorModel
@@ -34,11 +35,19 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: Client, response: httpx.Response
-) -> Optional[Union[HTTPValidationError, Message, NotFoundErrorModel]]:
+) -> Optional[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]:
     if response.status_code == HTTPStatus.OK:
         response_200 = Message.from_dict(response.json())
 
         return response_200
+    if response.status_code == HTTPStatus.UNAUTHORIZED:
+        response_401 = ErrorModel.from_dict(response.json())
+
+        return response_401
+    if response.status_code == HTTPStatus.FORBIDDEN:
+        response_403 = ErrorModel.from_dict(response.json())
+
+        return response_403
     if response.status_code == HTTPStatus.NOT_FOUND:
         response_404 = NotFoundErrorModel.from_dict(response.json())
 
@@ -55,7 +64,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Client, response: httpx.Response
-) -> Response[Union[HTTPValidationError, Message, NotFoundErrorModel]]:
+) -> Response[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -69,7 +78,7 @@ def sync_detailed(
     tag: str,
     *,
     client: AuthenticatedClient,
-) -> Response[Union[HTTPValidationError, Message, NotFoundErrorModel]]:
+) -> Response[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]:
     """Delete Package Tag
 
     Args:
@@ -81,7 +90,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[HTTPValidationError, Message, NotFoundErrorModel]]
+        Response[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]
     """
 
     kwargs = _get_kwargs(
@@ -103,7 +112,7 @@ def sync(
     tag: str,
     *,
     client: AuthenticatedClient,
-) -> Optional[Union[HTTPValidationError, Message, NotFoundErrorModel]]:
+) -> Optional[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]:
     """Delete Package Tag
 
     Args:
@@ -115,7 +124,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[HTTPValidationError, Message, NotFoundErrorModel]
+        Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]
     """
 
     return sync_detailed(
@@ -130,7 +139,7 @@ async def asyncio_detailed(
     tag: str,
     *,
     client: AuthenticatedClient,
-) -> Response[Union[HTTPValidationError, Message, NotFoundErrorModel]]:
+) -> Response[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]:
     """Delete Package Tag
 
     Args:
@@ -142,7 +151,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Union[HTTPValidationError, Message, NotFoundErrorModel]]
+        Response[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]
     """
 
     kwargs = _get_kwargs(
@@ -162,7 +171,7 @@ async def asyncio(
     tag: str,
     *,
     client: AuthenticatedClient,
-) -> Optional[Union[HTTPValidationError, Message, NotFoundErrorModel]]:
+) -> Optional[Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]]:
     """Delete Package Tag
 
     Args:
@@ -174,7 +183,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Union[HTTPValidationError, Message, NotFoundErrorModel]
+        Union[ErrorModel, HTTPValidationError, Message, NotFoundErrorModel]
     """
 
     return (

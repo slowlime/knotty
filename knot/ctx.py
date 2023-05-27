@@ -6,7 +6,7 @@ from knotty_client import Client, AuthenticatedClient
 from rich.console import Console
 import typer
 
-from knot.app import app, APP_NAME
+from knot.app import app, get_app_dir
 from knot.auth import get_session, Session
 from knot.config import Config
 
@@ -22,17 +22,33 @@ CLIENT_SETTINGS = {
 class BaseContextObj:
     console: Console
 
+    def to_authenticated(self) -> "AuthenticatedContextObj":
+        raise NotImplementedError()
+
 
 @dataclass
 class AuthenticatedContextObj(BaseContextObj):
     session: Session
     client: AuthenticatedClient
 
+    def to_authenticated(self) -> "AuthenticatedContextObj":
+        return self
+
 
 @dataclass
 class UnauthenticatedContextObj(BaseContextObj):
     session: None
     client: Client
+
+    def to_authenticated(self) -> AuthenticatedContextObj:
+        # breaking the circular imports
+        from knot.error import print_error
+
+        print_error(
+            "This operation requires authorization. Use `knot login` to log in.",
+            ctx=self,
+        )
+        raise typer.Abort()
 
 
 ContextObj = AuthenticatedContextObj | UnauthenticatedContextObj
@@ -47,7 +63,7 @@ def get_client(
     config_user_provided = config_path is not None
 
     if config_path is None:
-        config_path = Path(typer.get_app_dir(APP_NAME)) / "config.toml"
+        config_path = get_app_dir() / "config.toml"
 
     try:
         config = Config.from_toml(config_path)

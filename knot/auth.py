@@ -1,8 +1,9 @@
 from pathlib import Path
-import typer
-from pydantic import BaseModel, ValidationError
+import json
 
-from knot.app import APP_NAME
+from pydantic import BaseModel, ValidationError
+from pydantic.json import pydantic_encoder
+from knot.app import get_app_dir
 
 
 class Session(BaseModel):
@@ -10,10 +11,25 @@ class Session(BaseModel):
     token: str
 
 
+def get_session_file_path() -> Path:
+    return Path(get_app_dir()) / "session.json"
+
+
 def get_session() -> Session | None:
-    session_file_path = Path(typer.get_app_dir(APP_NAME)) / "session.json"
+    session_file_path = get_session_file_path()
 
     try:
         return Session.parse_file(session_file_path, content_type="application/json")
-    except OSError or ValidationError:
+    except OSError:
         return None
+    except ValidationError:
+        return None
+    except json.JSONDecodeError:
+        return None
+
+
+def save_session(session: Session):
+    session_file_path = get_session_file_path()
+
+    with session_file_path.open("w") as f:
+        json.dump(session, f, default=pydantic_encoder)
