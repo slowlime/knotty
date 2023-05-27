@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from jose import ExpiredSignatureError, jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -76,20 +76,24 @@ def get_current_user(
         if sub is None:
             logger.error("Received a valid JWT without sub field! Payload: %s", payload)
 
-            raise UnauthorizedException()
+            raise UnauthorizedException(None)
 
         username = sub[len("username:"):]
+    except ExpiredSignatureError:
+        logger.info("Received an expired JWT")
+
+        raise UnauthorizedException("Session expired")
     except JWTError:
         logger.info("Received an invalid JWT", exc_info=True)
 
-        raise UnauthorizedException()
+        raise UnauthorizedException(None)
 
     user = storage.get_user_model(session, username)
 
     if user is None:
         logger.error("Received a valid JWT for invalid user %s!", sub)
 
-        raise UnauthorizedException()
+        raise UnauthorizedException(None)
 
     logger.debug("Username %s has been authenticated", user.username)
 

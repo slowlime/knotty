@@ -13,6 +13,7 @@ from knotty.error import (
     InvalidCredentialsException,
     NoPermissionException,
     NotFoundException,
+    UnauthorizedException,
     UsernameTakenException,
     exception_responses,
 )
@@ -25,6 +26,7 @@ router = APIRouter()
     "/user/{username}",
     responses=exception_responses(
         NotFoundException,
+        UnauthorizedException,
         NoPermissionException,
     ),
 )
@@ -77,7 +79,7 @@ def login(
     status_code=status.HTTP_201_CREATED,
     responses=exception_responses(UsernameTakenException, EmailRegisteredException),
 )
-def register(session: SessionDep, body: schema.UserRegister) -> None:
+def register(session: SessionDep, body: schema.UserRegister) -> schema.Message:
     match storage.get_user_registered(session, body.username, body.email):
         case schema.UserRegistered.username_taken:
             raise UsernameTakenException()
@@ -95,3 +97,5 @@ def register(session: SessionDep, body: schema.UserRegister) -> None:
         session, schema.UserCreate(pwhash=pwhash, registered=registered, **body.dict())
     )
     session.commit()
+
+    return schema.Message(message="User registered")

@@ -46,8 +46,8 @@ class UnauthorizedException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     description="Could not authenticate the user",
 ):
-    def __init__(self):
-        super().__init__(headers={"WWW-Authenticate": "Bearer"})
+    def __init__(self, detail: str | None):
+        super().__init__(detail=detail, headers={"WWW-Authenticate": "Bearer"})
 
 
 class InvalidCredentialsException(
@@ -171,7 +171,10 @@ class UnknownOwnersException(
     usernames: list[str]
 
     def __init__(self, usernames: list[str]):
-        detail = "Owner list includes unknown users"
+        detail = "Owner list includes unknown user"
+
+        if len(usernames) != 1:
+            detail += "s"
 
         if usernames:
             detail += " " + ", ".join(usernames)

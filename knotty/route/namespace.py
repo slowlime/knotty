@@ -11,6 +11,7 @@ from knotty.error import (
     NoPermissionException,
     NotFoundException,
     RoleNotEmptyException,
+    UnauthorizedException,
     exception_responses,
 )
 
@@ -30,7 +31,9 @@ def check_namespace_exists(session: SessionDep, namespace: str) -> int:
 @router.post(
     "/namespace",
     status_code=status.HTTP_201_CREATED,
-    responses=exception_responses(AlreadyExistsException),
+    responses=exception_responses(
+        UnauthorizedException, NoPermissionException, AlreadyExistsException
+    ),
 )
 def create_namespace(
     config: ConfigDep,
@@ -64,7 +67,10 @@ def get_namespace(session: SessionDep, namespace: str) -> schema.Namespace:
     "/namespace/{namespace}",
     dependencies=[Depends(check_namespace_exists)],
     responses=exception_responses(
-        NotFoundException, NoPermissionException, AlreadyExistsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        AlreadyExistsException,
     ),
 )
 def edit_namespace(
@@ -91,7 +97,9 @@ def edit_namespace(
 @router.delete(
     "/namespace/{namespace}",
     dependencies=[Depends(check_namespace_exists)],
-    responses=exception_responses(NotFoundException, NoPermissionException),
+    responses=exception_responses(
+        NotFoundException, UnauthorizedException, NoPermissionException
+    ),
 )
 def delete_namespace(
     session: SessionDep,
@@ -133,7 +141,10 @@ def get_namespace_users(
     "/namespace/{namespace}/user",
     status_code=status.HTTP_201_CREATED,
     responses=exception_responses(
-        NotFoundException, NoPermissionException, AlreadyExistsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        AlreadyExistsException,
     ),
 )
 def create_namespace_user(
@@ -193,7 +204,10 @@ def get_namespace_user(
 @router.post(
     "/namespace/{namespace}/user/{username}",
     responses=exception_responses(
-        NotFoundException, NoPermissionException, NoNamespaceOwnerRemainsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        NoNamespaceOwnerRemainsException,
     ),
 )
 def edit_namespace_user(
@@ -242,7 +256,10 @@ def edit_namespace_user(
 @router.delete(
     "/namespace/{namespace}/user/{username}",
     responses=exception_responses(
-        NotFoundException, NoPermissionException, NoNamespaceOwnerRemainsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        NoNamespaceOwnerRemainsException,
     ),
 )
 def delete_namespace_user(
@@ -294,7 +311,10 @@ def get_namespace_roles(
     "/namespace/{namespace}/role",
     status_code=status.HTTP_201_CREATED,
     responses=exception_responses(
-        NotFoundException, NoPermissionException, AlreadyExistsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        AlreadyExistsException,
     ),
 )
 def create_namespace_role(
@@ -344,6 +364,7 @@ def get_namespace_role(
     "/namespace/{namespace}/role/{role}",
     responses=exception_responses(
         NotFoundException,
+        UnauthorizedException,
         NoPermissionException,
         AlreadyExistsException,
         NoNamespaceOwnerRemainsException,
@@ -403,7 +424,10 @@ def edit_namespace_role(
 @router.delete(
     "/namespace/{namespace}/role/{role}",
     responses=exception_responses(
-        NotFoundException, NoPermissionException, RoleNotEmptyException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        RoleNotEmptyException,
     ),
 )
 def delete_namespace_role(

@@ -878,8 +878,11 @@ def get_package_has_dependents(session: Session, package: str) -> bool:
     return session.scalars(
         select(
             select(dependent_package_alias.name)
-            .join_from(
-                package_alias, model.Package.dependents.of_type(dependent_package_alias)
+            .join_from(package_alias, package_alias.dependents)
+            .join(
+                model.PackageVersionDependency.dep_package.of_type(
+                    dependent_package_alias
+                )
             )
             .where(package_alias.name == package)
             .exists()
@@ -1112,7 +1115,7 @@ def insert_permissions(session: Session):
             index_elements=[model.Permission.code],
             set_={
                 "description": stmt.excluded.description,
-            }
+            },
         ),
         [
             {"code": code, "description": code.description}
@@ -1143,6 +1146,9 @@ def make_insert(
 def get_or_create_labels(
     session: Session, labels: Collection[str]
 ) -> Sequence[model.Label]:
+    if not labels:
+        return []
+
     session.execute(
         make_insert(session)(model.Label).on_conflict_do_nothing(
             index_elements=[model.Label.name]

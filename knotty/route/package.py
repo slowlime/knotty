@@ -12,6 +12,7 @@ from knotty.error import (
     NoPackageOwnerRemainsException,
     NoPermissionException,
     NotFoundException,
+    UnauthorizedException,
     UnknownDependenciesException,
     UnknownOwnersException,
     exception_responses,
@@ -67,6 +68,7 @@ def get_packages(session: SessionDep) -> list[schema.PackageBrief]:
     "/package",
     status_code=status.HTTP_201_CREATED,
     responses=exception_responses(
+        UnauthorizedException,
         NoPermissionException,
         NotFoundException,
         AlreadyExistsException,
@@ -135,6 +137,7 @@ def get_package(session: SessionDep, package: str) -> schema.Package:
 @router.post(
     "/package/{package}",
     responses=exception_responses(
+        UnauthorizedException,
         NotFoundException,
         NoPermissionException,
         AlreadyExistsException,
@@ -209,7 +212,10 @@ def edit_package(
     "/package/{package}",
     dependencies=[Depends(get_package_id)],
     responses=exception_responses(
-        NotFoundException, NoPermissionException, HasDependentsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        HasDependentsException,
     ),
 )
 def delete_package(
@@ -243,6 +249,7 @@ def get_package_versions(
     status_code=status.HTTP_201_CREATED,
     responses=exception_responses(
         NotFoundException,
+        UnauthorizedException,
         NoPermissionException,
         AlreadyExistsException,
         UnknownDependenciesException,
@@ -295,6 +302,7 @@ def get_package_version(
     "/package/{package}/version/{version}",
     responses=exception_responses(
         NotFoundException,
+        UnauthorizedException,
         NoPermissionException,
         AlreadyExistsException,
         UnknownDependenciesException,
@@ -337,6 +345,7 @@ def edit_package_version(
     "/package/{package}/version/{version}",
     responses=exception_responses(
         NotFoundException,
+        UnauthorizedException,
         NoPermissionException,
         HasReferringTagsException,
     ),
@@ -373,7 +382,10 @@ def get_package_tags(
     "/package/{package}/tag",
     status_code=status.HTTP_201_CREATED,
     responses=exception_responses(
-        NotFoundException, NoPermissionException, AlreadyExistsException
+        NotFoundException,
+        UnauthorizedException,
+        NoPermissionException,
+        AlreadyExistsException,
     ),
 )
 def create_package_tag(
@@ -416,6 +428,7 @@ def get_package_tag(
     "/package/{package}/tag/{tag}",
     responses=exception_responses(
         NotFoundException,
+        UnauthorizedException,
         NoPermissionException,
         AlreadyExistsException,
     ),
@@ -448,7 +461,10 @@ def edit_package_tag(
 
 
 @router.delete(
-    "/package/{package}/tag/{tag}", responses=exception_responses(NotFoundException)
+    "/package/{package}/tag/{tag}",
+    responses=exception_responses(
+        UnauthorizedException, NoPermissionException, NotFoundException
+    ),
 )
 def delete_package_tag(
     session: SessionDep,
