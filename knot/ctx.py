@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from typing import Optional
+from typing import Annotated, Optional
 from knotty_client import Client, AuthenticatedClient
 from rich.console import Console
 import typer
@@ -57,8 +57,18 @@ ContextObj = AuthenticatedContextObj | UnauthenticatedContextObj
 @app.callback()
 def get_client(
     ctx: typer.Context,
-    config_path: Optional[Path] = None,
-    url: Optional[str] = None,
+    config_path: Annotated[
+        Optional[Path],
+        typer.Option(
+            "-c",
+            "--config",
+            show_default=str(get_app_dir() / "config.toml"),  # type: ignore
+        ),
+    ] = None,
+    url: Annotated[
+        Optional[str],
+        typer.Option("--repository", show_default="Use from config")  # type: ignore
+    ] = None,
 ):
     config_user_provided = config_path is not None
 
