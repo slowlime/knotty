@@ -14,6 +14,7 @@ from knotty_client.api.default import (
     create_package_version,
     edit_package_version,
     delete_package_version,
+    search_packages,
 )
 from knotty_client.models import (
     HTTPValidationError,
@@ -27,12 +28,10 @@ from knotty_client.models import (
     AlreadyExistsErrorModel,
     Message,
     UnknownDependenciesErrorModel,
+    ChecksumAlgorithm,
+    PackageVersionCreate,
+    PackageVersionEdit,
 )
-from knotty_client.models.checksum_algorithm import ChecksumAlgorithm
-from knotty_client.models.package_checksum import PackageChecksum
-from knotty_client.models.package_dependency import PackageDependency
-from knotty_client.models.package_version_create import PackageVersionCreate
-from knotty_client.models.package_version_edit import PackageVersionEdit
 from knotty_client.types import UNSET
 from rich import box
 from rich.align import Align
@@ -72,7 +71,7 @@ def list_packages(
     if query is None:
         packages = assert_not_none(get_packages.sync(client=obj.client))
     else:
-        raise NotImplementedError()
+        packages = assert_not_none(search_packages.sync(client=obj.client, query=query))
 
     tree = Tree("Package list:")
 
@@ -297,15 +296,15 @@ def info(ctx: typer.Context, pkg: Annotated[str, typer.Argument(show_default=Fal
 
         for version in package.versions:
             grid = Table(
-                "Metadata",
+                "[italic]Version[/] [bold]{version}[/]".format(
+                    version=escape(version.version),
+                ),
                 "Description",
                 expand=True,
                 padding=(0, 2),
                 collapse_padding=False,
+                show_edge=False,
                 box=box.HORIZONTALS,
-                title="[italic]Version[/] [bold]{version}[/]".format(
-                    version=escape(version.version),
-                ),
             )
 
             metadata = get_version_group(version)

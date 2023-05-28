@@ -1,6 +1,9 @@
 from typing import TypeVar
+from click import Command
 
 from knotty_client.types import UNSET, Unset
+import typer
+from typer.core import TyperGroup
 
 
 T = TypeVar("T")
