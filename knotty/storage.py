@@ -599,7 +599,46 @@ def get_packages(session: Session) -> list[schema.PackageBrief]:
                 model.User.username, raiseload=True
             ),
             selectinload(model.Package.namespace).load_only(model.Namespace.namespace),
-            undefer(model.Package.downloads),
+        )
+    ).all()
+
+    return [to_package_brief(package) for package in packages]
+
+
+def search_packages(session: Session, query: str) -> list[schema.PackageBrief]:
+    packages = session.scalars(
+        select(model.Package)
+        .where(
+            # name matches
+            (model.Package.name.contains(query.lower(), autoescape=True))
+            # summary matches
+            | (model.Package.summary.icontains(query, autoescape=True))
+            # version description matches
+            | (
+                select(model.PackageVersion)
+                .where(model.PackageVersion.package_id == model.Package.id)
+                .where(
+                    model.PackageVersion.description.icontains(query, autoescape=True)
+                )
+                .exists()
+            )
+            # label matches
+            | (
+                select(model.Label)
+                .select_from(model.package_label_table.join(model.Label))
+                .where(model.package_label_table.c.package_id == model.Package.id)
+                .where(model.Label.name.contains(query.lower(), autoescape=True))
+                .exists()
+            )
+        )
+        .options(
+            selectinload(model.Package.labels),
+            selectinload(model.Package.owners).load_only(
+                model.User.username, raiseload=True
+            ),
+            selectinload(model.Package.namespace).load_only(
+                model.Namespace.namespace, raiseload=True
+            ),
         )
     ).all()
 

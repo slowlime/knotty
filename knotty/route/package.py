@@ -64,6 +64,11 @@ def get_packages(session: SessionDep) -> list[schema.PackageBrief]:
     return storage.get_packages(session)
 
 
+@router.post("/search")
+def search_packages(session: SessionDep, query: str) -> list[schema.PackageBrief]:
+    return storage.search_packages(session, query)
+
+
 @router.post(
     "/package",
     status_code=status.HTTP_201_CREATED,
