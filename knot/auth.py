@@ -33,3 +33,8 @@ def save_session(session: Session):
 
     with session_file_path.open("w") as f:
         json.dump(session, f, default=pydantic_encoder)
+
+
+def remove_session():
+    session_file_path = get_session_file_path()
+    session_file_path.unlink(True)

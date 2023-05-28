@@ -21,7 +21,7 @@ from rich.text import Text
 import typer
 
 from knot.app import app
-from knot.auth import Session, save_session
+from knot.auth import Session, remove_session, save_session
 from knot.ctx import AuthenticatedContextObj, ContextObj
 from knot.error import print_error
 from knot.util import assert_not_none
@@ -61,6 +61,20 @@ def login(ctx: typer.Context):
     obj.console.print(
         "[bold green]Success![/] Authorized as [b]{username}[/]".format(
             username=escape(username),
+        )
+    )
+
+
+@app.command()
+def logout(ctx: typer.Context):
+    """Log out of the current session."""
+
+    obj: AuthenticatedContextObj = ctx.obj.to_authenticated()
+
+    remove_session()
+    obj.console.print(
+        "[bold green]Success![/] Logged out of [b]{username}[/]".format(
+            username=escape(obj.session.username),
         )
     )
 
