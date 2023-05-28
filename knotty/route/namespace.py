@@ -453,7 +453,7 @@ def delete_namespace_role(
     ):
         raise NoPermissionException()
 
-    if storage.get_namespace_role_empty(session, namespace_id, role):
+    if not storage.get_namespace_role_empty(session, namespace_id, role):
         raise RoleNotEmptyException()
 
     storage.delete_namespace_role(session, namespace_id, role)
