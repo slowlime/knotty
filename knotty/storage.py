@@ -876,7 +876,12 @@ def delete_package(session: Session, package: str):
     pkg_model = get_package_model(session, package)
     assert pkg_model is not None
 
+    for version in pkg_model.versions:
+        version.dependencies.clear()
+
+    pkg_model.tags.clear()
     session.delete(pkg_model)
+    purge_garbage_labels(session)
 
 
 def get_unknown_packages(session: Session, packages: set[str]) -> list[str]:
@@ -924,6 +929,7 @@ def get_package_has_dependents(session: Session, package: str) -> bool:
                 )
             )
             .where(package_alias.name == package)
+            .where(dependent_package_alias.name != package)
             .exists()
         )
     ).one()
