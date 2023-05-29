@@ -1,6 +1,6 @@
 manifest_version = 1
 
-version = "1.0.2"
+version = "1.0.0"
 description = '''
 Hello world!
 
@@ -28,7 +28,7 @@ Hello world!
 raise NotImplementedError()
 ```
 '''
-tarball = "https://localhost/index.html"
+tarball = "http://localhost/index.html"
 
 [[dependencies]]
 package = "hello-world"

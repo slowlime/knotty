@@ -12,6 +12,7 @@ knotty-client = { path = "./knotty-client/", develop = true }
 pydantic = "^1.10.8"
 toml = "^0.10.2"
 semver = "^3.0.0"
+requests = "^2.31.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"

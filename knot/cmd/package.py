@@ -39,16 +39,27 @@ from rich.console import group
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.padding import Padding
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 from rich.table import Table
 from rich.tree import Tree
 from rich.text import Text
 from rich.style import Style
+import requests
 import typer
 
 from knot.app import app
 from knot.ctx import AuthenticatedContextObj, ContextObj
 from knot.error import print_error
-from knot.manifest import read_manifest
+from knot.manifest import Version, read_manifest
+from knot.spec import PackageSpec, Tag
 from knot.util import (
     assert_not_none,
     coerce_none_to_unset,
@@ -317,6 +328,128 @@ def info(ctx: typer.Context, pkg: Annotated[str, typer.Argument(show_default=Fal
             yield grid
 
     obj.console.print(get_group(package))
+
+
+@app.command()
+def download(
+    ctx: typer.Context,
+    pkg: Annotated[
+        str,
+        typer.Argument(
+            help="Package specification (pkg-name, pkg-name:1.0.0, pkg-name:tag)",
+            show_default=False,
+        ),
+    ],
+    out_path: Annotated[
+        Path,
+        typer.Argument(
+            show_default=False,
+            file_okay=True,
+            dir_okay=False,
+            writable=True,
+        ),
+    ],
+    yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
+):
+    """Download a package."""
+
+    spec = PackageSpec.from_str(pkg)
+    obj: ContextObj = ctx.obj
+
+    if not yes and out_path.exists():
+        typer.confirm(
+            "File already exists. Are you sure you want to overwrite it?", abort=True
+        )
+
+    package = get_package(spec.package, obj)
+
+    if not package.versions:
+        print_error("Package defines no versions.", ctx=obj)
+        raise typer.Abort()
+
+    match spec.version:
+        case None:
+            version = max(package.versions, key=lambda x: Version.parse(x.version))
+
+        case Tag() as tag_spec:
+            for tag in package.tags:
+                if tag.name == tag_spec:
+                    break
+            else:
+                print_error("Tag does not exist.", ctx=obj)
+                raise typer.Abort()
+
+            for version in package.versions:
+                if str(version.version) == tag.version:
+                    break
+            else:
+                print_error(
+                    f"Package references non-existent version {tag.version}", ctx=obj
+                )
+                raise typer.Abort()
+
+        case Version() as version_spec:
+            for version in package.versions:
+                if Version.parse(version.version) == version_spec:
+                    break
+            else:
+                print_error("Version does not exist.", ctx=obj)
+                raise typer.Abort()
+
+        case _:
+            assert_never(spec.version)
+
+    url = version.tarball
+
+    if not isinstance(url, str):
+        print_error(
+            f"Version {version.version} does not link to downloadable tarball", ctx=obj
+        )
+        raise typer.Abort()
+
+    obj.console.print(
+        f"Downloading version [italic]{escape(version.version)}[/]: {escape(url)}..."
+    )
+
+    with Progress(
+        TextColumn("[bold blue]Downloading..."),
+        BarColumn(bar_width=None),
+        TaskProgressColumn(),
+        DownloadColumn(binary_units=True),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+        console=obj.console,
+    ) as progress:
+        r = requests.get(
+            url,
+            stream=True,
+            headers={
+                "User-Agent": "knot",
+            },
+        )
+        r.raise_for_status()
+
+        with out_path.open("wb") as f:
+            content_length = r.headers.get("content-length")
+            total = None
+
+            if content_length is not None:
+                try:
+                    total = int(content_length, base=10)
+                except ValueError:
+                    pass
+
+            task = progress.add_task("Downloading...", total=total)
+
+            for chunk in r.iter_content(1024):
+                f.write(chunk)
+                progress.advance(task, len(chunk))
+
+    obj.console.print(
+        "[bold green]Success![/] Downloaded to [italic]{path}[/]".format(
+            path=escape(str(out_path)),
+        )
+    )
 
 
 pkg_app = typer.Typer()
