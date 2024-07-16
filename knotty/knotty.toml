@@ -1,0 +1,5 @@
+secret_key = "hello-world"
+db_url = "sqlite://:memory:"
+
+[default_names]
+namespace_owner_role = "owner"
